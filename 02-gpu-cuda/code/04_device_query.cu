@@ -70,7 +70,7 @@ int main() {
 
     // 对 A100 的特殊说明
     printf("=========================================\n");
-    printf("  A100 关键特性 (本机为 8×A100-SXM4-80GB):\n");
+    printf("  A100 关键特性 (A100-SXM4-80GB):\n");
     printf("  - SM: 108/GPU\n");
     printf("  - CUDA Cores: 6912/GPU\n");
     printf("  - Tensor Cores: 432/GPU (第3代)\n");

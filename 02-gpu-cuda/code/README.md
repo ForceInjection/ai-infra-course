@@ -45,7 +45,7 @@ make clean
 
 ### 方法 2: Docker (无需本地 nvcc)
 
-本机已测试可用的镜像: `lmcache/vllm-openai:v0.4.7-cu129` (包含 CUDA 12.9 + nvcc)
+可用镜像示例: `lmcache/vllm-openai:v0.4.7-cu129` (包含 CUDA 12.9 + nvcc)
 
 ```bash
 # 编译所有
@@ -171,7 +171,7 @@ Bank Conflict 分析:
 
 **运行**: `./device_query` 或 `bash cuda-docker run device_query`
 
-**预期输出** (本机 8×A100):
+**预期输出** (A100 服务器):
 
 ```text
 =========================================
