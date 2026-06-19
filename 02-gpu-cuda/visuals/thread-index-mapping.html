@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUDA 线程索引到数据的映射</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:12px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#f8fafc; }
+.header p { color:#94a3b8; margin-top:2px; font-size:0.78em; }
+.main-wrap { max-width:1400px; width:100%; margin:0 auto; padding:0 4px 8px; display:flex; gap:10px; flex:1; min-height:0; align-items:flex-start; }
+.main-left { flex:1; min-width:0; overflow-y:auto; display:flex; align-items:flex-start; justify-content:center; padding-top:0; }
+.main-right { width:380px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { height:600px; overflow-y:auto; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:12px 14px; margin-bottom:8px; flex-shrink:0; }
+.detail-panel .note { color:#94a3b8; font-size:0.78em; line-height:1.6; }
+.detail-panel .note strong { color:#f8fafc; }
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.8em; background:#1e293b; padding:1px 4px; border-radius:3px; }
+.actions { display:flex; gap:5px; padding-top:8px; flex-wrap:wrap; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.8em; cursor:pointer; font-weight:600; background:#334155; color:#cbd5e1; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.actions button.active-dim { background:#1e40af; color:#bfdbfe; }
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>&#127760; 线程索引映射 — 从 Thread ID 到数据元素</h1>
+  <p>模块 2 — GPU 硬件架构与 CUDA 编程入门 &nbsp;|&nbsp; PPT 第 28 页 &nbsp;|&nbsp; 切换维度查看映射关系</p>
+</div>
+<div class="main-wrap">
+  <div class="main-left">
+    <svg id="main-svg" viewBox="0 0 1200 820"></svg>
+  </div>
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        &#128161; <strong>线程索引映射</strong><br><br>
+        每个线程通过索引计算确定<strong>自己要处理哪个数据元素</strong>。<br><br>
+        选择维度查看不同的映射方式:<br>
+        &bull; <strong>1D</strong> — 向量，tid 直接算<br>
+        &bull; <strong>2D</strong> — 矩阵，row/col 分别算<br>
+        &bull; <strong>3D</strong> — 立方体，x/y/z 三维索引<br><br>
+        gridDim 和 blockDim 可以是一维、二维或三维，<strong>选择与数据形状匹配的维度</strong>能让线程索引计算更自然，无需手动换算 row/col。<br><br>
+        所有映射必须做<strong>边界检查</strong> (if tid &lt; N)。<br><br>
+        实际场景中数据往往远大于线程数，此时一个线程通过 <strong>stride 循环</strong>处理多个数据元素：<br>
+        <code>for (i = tid; i &lt; N; i += gridSize)</code> — 一个线程负责多个元素。
+      </div>
+    </div>
+    <div class="actions">
+      <button class="active-dim" onclick="setDim(1)" id="btn-1d">1D — Vector</button>
+      <button onclick="setDim(2)" id="btn-2d">2D — Matrix</button>
+      <button onclick="setDim(3)" id="btn-3d">3D — Cube</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var dim = 1;
+var grid1 = 3, block1 = 8, N = 20;
+var gridX = 4, gridY = 4, blockX = 4, blockY = 4, M2 = 10, N2 = 14;
+var gx = 3, gy = 3, gz = 1, bx = 3, byBlk = 2, bz = 3, Dx = 8, Dy = 6, Dz = 3;
+var hoveredTid = -1;
+
+function setDim(d) {
+  dim = d; hoveredTid = -1;
+  document.querySelectorAll('.actions button').forEach(function(b){b.classList.remove('active-dim');});
+  document.getElementById('btn-'+d+'d').classList.add('active-dim');
+  updateDetail(d);
+  draw();
+}
+
+function updateDetail(d) {
+  var panel = document.getElementById('detail-panel');
+  var t = '<div class="note">';
+  if (d === 1) {
+    t += '<strong>1D — Vector 映射</strong><br><br>当线程 ≥ 数据时，每个线程处理<strong>一个元素</strong>；数据更大时，一个线程通过 stride 处理<strong>多个元素</strong>。<br><br>';
+    t += '<strong>gridDim</strong> = '+grid1+' (共 '+grid1+' 个 Block), <strong>blockDim</strong> = '+block1+' (每 Block '+block1+' 线程)<br>';
+    t += '总线程: grid × block = '+grid1+' × '+block1+' = '+grid1*block1+' (数据 N = '+N+')<br><br>';
+    t += '索引公式:<br><code>tid = blockIdx.x * blockDim.x + threadIdx.x</code><br><br>';
+    t += '边界检查: <code>if (tid &lt; N)</code><br>超出 N 的线程<strong>跳过</strong>不执行。<br><br>数据 &gt; 线程时，用 stride 循环:<br><code>for (i = tid; i &lt; N; i += gridSize)</code><br><br>线性内存地址: <code>idx = tid</code> (一维数组，索引即地址)';
+  } else if (d === 2) {
+    t += '<strong>2D — Matrix 映射</strong><br><br>当线程 ≥ 数据时，每个线程处理<strong>一个元素</strong>；数据更大时，一个线程通过 stride 处理<strong>多个元素</strong>。<br><br>';
+    t += '<strong>gridDim</strong> = ('+gridX+', '+gridY+') (Grid 沿 x/y 的 Block 数量), <strong>blockDim</strong> = ('+blockX+', '+blockY+') (每 Block 沿 x/y 的线程数)<br>';
+    t += '总线程: grid × block = ('+gridX+'×'+gridY+') × ('+blockX+'×'+blockY+') = '+(gridX*gridY*blockX*blockY)+' (数据 '+M2+' × '+N2+')<br><br>';
+    t += '索引公式:<br><code>row = blockIdx.y * blockDim.y + threadIdx.y</code><br>';
+    t += '<code>col = blockIdx.x * blockDim.x + threadIdx.x</code><br><br>';
+    t += '边界检查: <code>if (row &lt; M && col &lt; N)</code><br>超出范围的线程<strong>跳过</strong>不执行。<br><br>数据 &gt; 线程时，用 stride 循环:<br><code>for (r = row; r &lt; M; r += gridY * blockY)</code><br><br>线性内存地址: <code>idx = row * N + col</code> (行优先存储)';
+  } else {
+    t += '<strong>3D — Cube 映射</strong><br><br>当线程 ≥ 数据时，每个线程处理<strong>一个元素</strong>；数据更大时，一个线程通过 stride 处理<strong>多个元素</strong>。<br><br>';
+    t += '<strong>gridDim</strong> = ('+gx+', '+gy+', '+gz+') (Grid 沿各维度的 Block 数量), <strong>blockDim</strong> = ('+bx+', '+byBlk+', '+bz+') (每 Block 沿各维度的线程数)<br>';
+    t += '总线程: grid × block = ('+gx+'×'+gy+'×'+gz+') × ('+bx+'×'+byBlk+'×'+bz+') = '+(gx*gy*gz*bx*byBlk*bz)+' (数据 '+Dx+' × '+Dy+' × '+Dz+')<br><br>';
+    t += '索引公式:<br><code>x = blockIdx.x * blockDim.x + threadIdx.x</code><br>';
+    t += '<code>y = blockIdx.y * blockDim.y + threadIdx.y</code><br>';
+    t += '<code>z = blockIdx.z * blockDim.z + threadIdx.z</code><br><br>';
+    t += '边界检查: <code>if (x &lt; Dx && y &lt; Dy && z &lt; Dz)</code><br>超出范围的线程<strong>跳过</strong>不执行。<br><br>';
+    t += '数据 &gt; 线程时，用 stride 循环:<br><code>for (z = id.z; z &lt; Dz; z += gDim.z * bDim.z)</code><br><code>  for (y = id.y; y &lt; Dy; y += gDim.y * bDim.y)</code><br><code>    for (x = id.x; x &lt; Dx; x += gDim.x * bDim.x)</code><br>';
+    t += '<br>线性内存地址: <code>idx = z * (Dx * Dy) + y * Dx + x</code>';
+  }
+  t += '</div>';
+  panel.innerHTML = t;
+}
+
+function R(x, y, w, h, f, s, sw, rx) {
+  sw = sw || 0.5; rx = rx || 2;
+  return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+rx+'" fill="'+f+'" stroke="'+s+'" stroke-width="'+sw+'"/>';
+}
+function T(x, y, text, size, fill, anchor, weight) {
+  return '<text x="'+x+'" y="'+y+'" text-anchor="'+(anchor||'middle')+'" font-size="'+size+'" fill="'+fill+'" font-weight="'+(weight||'normal')+'" font-family="sans-serif">'+text+'</text>';
+}
+
+function draw() {
+  var svg = document.getElementById('main-svg');
+  var W = 1200, H = 820;
+  var h = R(0, 0, W, H, '#1a1a2e', '#334155', 2, 16);
+  if (dim === 1) h += draw1D(W, H);
+  else if (dim === 2) h += draw2D(W, H);
+  else h += draw3D(W, H);
+  svg.innerHTML = h;
+}
+
+function draw1D(W, H) {
+  var cell = 36, gap = 4;
+  var totalThreads = grid1 * block1;
+  var cols = block1, rows = Math.ceil(totalThreads / cols);
+  var gridW = cols * (cell+gap) - gap;
+  var left = (W - gridW) / 2, top = 130;
+  var h = '';
+
+  h += T(W/2, 54, '1D 线程 → 数组元素映射', 18, '#f8fafc', 'middle', 'bold');
+  h += T(W/2, 84, 'tid = blockIdx.x * blockDim.x + threadIdx.x    |    if (tid < N)', 14, '#fbbf24', 'middle');
+  if (hoveredTid >= 0 && hoveredTid < N) {
+    var hbx = Math.floor(hoveredTid / block1), htx = hoveredTid % block1;
+    h += T(W/2, 108, 'hover 线程 ' + hoveredTid + ':  tid = ' + hbx + ' *' + block1 + ' + ' + htx + ' = ' + hoveredTid + '  →  A[' + hoveredTid + ']', 14, '#86efac', 'middle', 'bold');
+  }
+
+  for (var r = 0; r < rows; r++) {
+    var blockIdx = Math.floor(r * cols / block1);
+    if (r > 0 && r * cols % block1 === 0) {
+      h += R(left, top + r*(cell+gap) - gap/2 - 1, gridW, 3, 'none', '#3b82f6', 1, 0);
+    }
+    // Block label — each block = one row of 8 threads
+    if (r * cols % block1 === 0) {
+      h += T(left - 42, top + r*(cell+gap) + cell/2 + 5, 'Block '+blockIdx, 10, '#60a5fa', 'end');
+    }
+    for (var c = 0; c < cols; c++) {
+      var tid = r * cols + c;
+      if (tid >= totalThreads) break;
+      var x = left + c*(cell+gap), y = top + r*(cell+gap);
+      var inR = tid < N;
+      var bg = inR ? (hoveredTid === tid ? '#14532d' : '#166534') : '#3f1a1a';
+      var fg = inR ? '#bbf7d0' : '#fca5a5';
+      h += R(x, y, cell, cell, bg, inR ? '#22c55e' : '#ef4444', 1.5);
+      h += T(x + cell/2, y + cell/2 + 5, ''+tid, 12, fg);
+    }
+  }
+
+  var arrY = top + rows*(cell+gap) + 50;
+  h += T(W/2, arrY - 20, '每个 tid 映射到一个数组元素', 12, '#94a3b8');
+  var arrW = N * (cell+gap) - gap;
+  var arrLeft = (W - arrW) / 2;
+  for (var i = 0; i < N; i++) {
+    var x = arrLeft + i*(cell+gap);
+    var bg = hoveredTid === i ? '#14532d' : '#1e3a8a';
+    h += R(x, arrY, cell, cell, bg, '#38bdf8', 1.5);
+    h += T(x + cell/2, arrY + cell/2 + 5, 'A['+i+']', 11, '#bae6fd');
+  }
+  // Color legend
+  var legY = arrY + cell + 30;
+  h += R(W/2 - 180, legY + 5, 16, 16, '#166534', '#22c55e', 1, 2);
+  h += T(W/2 - 158, legY + 16, '活跃 (tid < N)', 11, '#86efac', 'start');
+  h += R(W/2 + 30, legY + 5, 16, 16, '#3f1a1a', '#ef4444', 1, 2);
+  h += T(W/2 + 52, legY + 16, '越界 (被跳过)', 11, '#fca5a5', 'start');
+  h += '<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="transparent" onmousemove="hover1D(event)" onmouseout="hoverOut()"/>';
+  return h;
+}
+
+function hover1D(e) {
+  var svg = document.querySelector('svg');
+  var pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  var sp = pt.matrixTransform(svg.getScreenCTM().inverse());
+  var cell = 36, gap = 4, cols = block1, totalThreads = grid1 * block1;
+  var gridW = cols * (cell+gap) - gap, left = (1200 - gridW) / 2, top = 130;
+  var rows = Math.ceil(totalThreads / cols);
+  for (var r = 0; r < rows; r++)
+    for (var c = 0; c < cols; c++) {
+      var tid = r * cols + c;
+      if (tid >= totalThreads) break;
+      var x = left + c*(cell+gap), y = top + r*(cell+gap);
+      if (sp.x >= x && sp.x <= x+cell && sp.y >= y && sp.y <= y+cell) { hoveredTid = tid; draw(); return; }
+    }
+  var arrW = N * (cell+gap) - gap, arrLeft = (960 - arrW) / 2;
+  var arrY = top + rows*(cell+gap) + 50;
+  for (var i = 0; i < N; i++) {
+    var ax = arrLeft + i*(cell+gap);
+    if (sp.x >= ax && sp.x <= ax+cell && sp.y >= arrY && sp.y <= arrY+cell) { hoveredTid = i; draw(); return; }
+  }
+  if (hoveredTid !== -1) { hoveredTid = -1; draw(); }
+}
+
+function hoverOut() { if (hoveredTid !== -1) { hoveredTid = -1; draw(); } }
+
+function draw2D(W, H) {
+  var cell = 34, gap = 4;
+  var totalRows = gridY * blockY, totalCols = gridX * blockX;
+  var matW = totalCols * (cell+gap) - gap, matH = totalRows * (cell+gap) - gap;
+  var mcell = 28, mxGap = 50;
+  var totalGroupW = matW + mxGap + N2*mcell;
+  var left = (W - totalGroupW) / 2, top = 140;
+  var mx = left + matW + mxGap;
+  var h = '';
+
+  h += T(W/2, 44, '2D 线程 → 矩阵元素映射', 22, '#f8fafc', 'middle', 'bold');
+  h += T(W/2, 76, 'row = blockIdx.y×blockDim.y + threadIdx.y    |    col = blockIdx.x×blockDim.x + threadIdx.x', 15, '#fbbf24', 'middle');
+  var hov = hovered2D;
+  if (hov && hov.r < M2 && hov.c < N2) {
+    var exBx = Math.floor(hov.c / blockX), exTx = hov.c % blockX;
+    var exBy = Math.floor(hov.r / blockY), exTy = hov.r % blockY;
+    h += T(W/2, 102, 'hover T' + hov.r + ',' + hov.c + ' → row = ' + exBy + '×' + blockY + '+' + exTy + ' = ' + hov.r + '    col = ' + exBx + '×' + blockX + '+' + exTx + ' = ' + hov.c + '    ↦ [' + hov.r + ',' + hov.c + ']', 14, '#86efac', 'middle', 'bold');
+  } else {
+    var exCol = 5, exRow = 3;
+    var exBx = Math.floor(exCol / blockX), exTx = exCol % blockX;
+    var exBy = Math.floor(exRow / blockY), exTy = exRow % blockY;
+    h += T(W/2, 102, 'hover 线程查看映射 → 示例: T' + exRow + ',' + exCol + ' → row = ' + exBy + '×' + blockY + '+' + exTy + ' = ' + exRow + '    col = ' + exBx + '×' + blockX + '+' + exTx + ' = ' + exCol, 14, '#86efac', 'middle');
+  }
+
+  for (var gyi = 0; gyi < gridY; gyi++) {
+    var y = top + gyi * blockY * (cell+gap) - 1;
+    h += R(left, y, matW, 3, 'none', '#3b82f6', 1, 0);
+  }
+  for (var gxi = 0; gxi < gridX; gxi++) {
+    var x = left + gxi * blockX * (cell+gap) - 1;
+    h += R(x, top, 3, matH, 'none', '#3b82f6', 1, 0);
+  }
+
+  // Thread grid
+  var hov = hovered2D;
+  for (var r = 0; r < totalRows; r++)
+    for (var c = 0; c < totalCols; c++) {
+      var x = left + c*(cell+gap), y = top + r*(cell+gap);
+      var inR = r < M2 && c < N2;
+      var isHov = hov && hov.r === r && hov.c === c;
+      var bg = isHov ? '#22c55e' : (inR ? '#166534' : '#3f1a1a');
+      h += R(x, y, cell, cell, bg, isHov ? '#fbbf24' : (inR ? '#22c55e' : '#ef4444'), isHov ? 2.5 : (inR ? 1 : 1));
+      h += T(x + cell/2, y + cell/2 + 5, 'T'+r+','+c, 10, inR ? '#bbf7d0' : '#fca5a5');
+    }
+
+  // Data matrix on right
+  h += T(mx + M2*mcell/2, top - 14, '数据矩阵 ' + M2 + '×' + N2, 13, '#94a3b8');
+  for (var r = 0; r < M2; r++)
+    for (var c = 0; c < N2; c++) {
+      var x = mx + c*mcell, y = top + r*mcell;
+      var isHov = hov && hov.r === r && hov.c === c;
+      var bg = isHov ? '#22c55e' : '#1e3a8a';
+      h += R(x, y, mcell-1, mcell-1, bg, isHov ? '#fbbf24' : '#38bdf8', isHov ? 2 : 0.8);
+      h += T(x + mcell/2, y + mcell/2 + 5, ''+r+','+c, 10, isHov ? '#fff' : '#bae6fd');
+    }
+
+  // Block labels — By (left side) and Bx (top)
+  for (var gyi = 0; gyi < gridY; gyi++) {
+    var ly = top + gyi * blockY * (cell+gap) + blockY*(cell+gap)/2;
+    h += T(left - 28, ly + 5, 'B.y='+gyi, 11, '#60a5fa', 'end');
+  }
+  for (var gxi = 0; gxi < gridX; gxi++) {
+    var lx = left + gxi * blockX * (cell+gap) + blockX*(cell+gap)/2;
+    h += T(lx, top - 14, 'B.x='+gxi, 11, '#60a5fa', 'middle');
+  }
+  var legY = top + Math.max(matH, M2*mcell) + 40;
+  h += R(W/2 - 180, legY + 5, 16, 16, '#166534', '#22c55e', 1, 2);
+  h += T(W/2 - 158, legY + 16, '活跃 (row&lt;M &amp;&amp; col&lt;N)', 12, '#86efac', 'start');
+  h += R(W/2 + 30, legY + 5, 16, 16, '#3f1a1a', '#ef4444', 1, 2);
+  h += T(W/2 + 52, legY + 16, '越界 (被跳过)', 12, '#fca5a5', 'start');
+  h += '<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="transparent" onmousemove="hover2D(event,'+left+','+top+','+cell+','+gap+','+matH+','+mx+','+mcell+')" onmouseout="hoverOut2D()"/>';
+  return h;
+}
+
+var hovered2D = null;
+function hover2D(e, left, top, cell, gap, matH, mx, mcell) {
+  var svg = document.querySelector('svg');
+  var pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  var sp = pt.matrixTransform(svg.getScreenCTM().inverse());
+  var found = null;
+  // Check thread grid
+  for (var r = 0; r < gridY*blockY; r++) {
+    for (var c = 0; c < gridX*blockX; c++) {
+      var x = left + c*(cell+gap), y = top + r*(cell+gap);
+      if (sp.x >= x && sp.x <= x+cell && sp.y >= y && sp.y <= y+cell && r < M2 && c < N2) {
+        found = {r:r, c:c}; break;
+      }
+    }
+  }
+  // Check data matrix
+  if (!found) {
+    for (var r = 0; r < M2; r++) {
+      for (var c = 0; c < N2; c++) {
+        var x = mx + c*mcell, y = top + r*mcell;
+        if (sp.x >= x && sp.x <= x+mcell && sp.y >= y && sp.y <= y+mcell) {
+          found = {r:r, c:c}; break;
+        }
+      }
+    }
+  }
+  if (!found && hovered2D) { hovered2D = null; draw(); return; }
+  if (found && (!hovered2D || hovered2D.r !== found.r || hovered2D.c !== found.c)) {
+    hovered2D = found; draw();
+  }
+}
+function hoverOut2D() { hovered2D = null; draw(); }
+
+function draw3D(W, H) {
+  var cell = 22, gap = 3;
+  var tx = gx * bx, ty = gy * byBlk, tz = gz * bz;
+  var gridW = tx * (cell+gap) - gap, gridH = ty * (cell+gap) - gap;
+  var showLayers = tz;
+  var lgap = 30;
+  var totalLayerW = showLayers * gridW + (showLayers-1) * lgap;
+  var dcW = 280, dcGap = 40;
+  var totalW2 = totalLayerW + dcGap + dcW;
+  var left = (W - totalW2) / 2, top = 180;
+  var h = '';
+
+  h += T(W/2, 50, '3D 线程 → 立方体元素映射', 20, '#f8fafc', 'middle', 'bold');
+  h += T(W/2, 80, 'x = bIdx.x * bDim.x + tIdx.x,    y = bIdx.y * bDim.y + tIdx.y,    z = bIdx.z * bDim.z + tIdx.z', 14, '#fbbf24', 'middle');
+  h += T(W/2, 104, 'grid('+gx+','+gy+','+gz+')  * block('+bx+','+byBlk+','+bz+')  →  '+tx+'×'+ty+'×'+tz+' 线程    |    数据: '+Dx+'×'+Dy+'×'+Dz, 12, '#94a3b8', 'middle');
+
+  // Thread grid z-layers
+  for (var zi = 0; zi < showLayers; zi++) {
+    var z = zi;
+    var zLeft = left + zi * (gridW + lgap);
+    h += T(zLeft + gridW/2, top - 10, '线程层 z='+z+' (共'+tz+'层)', 12, '#94a3b8');
+
+    for (var bgy = 0; bgy < gy; bgy++) {
+      var y = top + bgy * byBlk * (cell+gap) - 1;
+      h += R(zLeft, y, gridW, 2, 'none', '#3b82f6', 0.8, 0);
+    }
+    for (var bgx = 0; bgx < gx; bgx++) {
+      var xl = zLeft + bgx * bx * (cell+gap) - 1;
+      h += R(xl, top, 2, gridH, 'none', '#3b82f6', 0.8, 0);
+    }
+    for (var r = 0; r < ty; r++)
+      for (var c = 0; c < tx; c++) {
+        var x = zLeft + c*(cell+gap), y = top + r*(cell+gap);
+        var inR = c < Dx && r < Dy && z < Dz;
+        h += R(x, y, cell, cell, inR ? '#166534' : '#3f1a1a', inR ? '#22c55e' : '#ef4444', 0.8);
+      }
+  }
+
+  // Data cube — isometric-style stacked layers
+  var dcx = left + totalLayerW + dcGap, dcy = top;
+  h += T(dcx + dcW/2, dcy - 14, '数据立方体 '+Dx+'×'+Dy+'×'+Dz, 13, '#94a3b8');
+
+  var isoW = 26, isoH = 20;
+  var layers = Dz;
+  var rows = Dy, cols = Dx;
+  var cubeW = cols * isoW, cubeH = rows * isoH;
+  // Draw faces back-to-front (z=2, z=1, z=0)
+  for (var z = layers-1; z >= 0; z--) {
+    var sx = dcx + 20 + z*12, sy = dcy + 30 - z*16;
+    h += R(sx, sy, cubeW, cubeH, z === 0 ? '#1e3a8a' : z === 1 ? '#172554' : '#0f1535', '#38bdf8', z === 0 ? 1.5 : 0.8);
+  }
+  // Draw labels on top (so z=0 face doesn't cover z=1/z=2 labels)
+  for (var z = layers-1; z >= 0; z--) {
+    var sx = dcx + 20 + z*12, sy = dcy + 30 - z*16;
+    h += T(sx - 16, sy + 14, 'z='+z, 11, '#60a5fa', 'end');
+    for (var r = 0; r < rows; r++)
+      for (var c = 0; c < cols; c++) {
+        h += T(sx + c*isoW + isoW/2, sy + r*isoH + isoH/2 + 4, c+','+r+','+z, 9, z === 0 ? '#bae6fd' : '#64748b');
+      }
+  }
+  // Linear memory formula
+  var fY = dcy + Math.max(rows*isoH, gridH) + 140;
+  h += T(W/2, fY, '线性内存地址:  idx = z * (Dx * Dy) + y * Dx + x', 13, '#fbbf24', 'middle', 'bold');
+  h += T(W/2, fY + 20, 'z=0 层先存储, 每层按行优先 (row-major) 排列', 10, '#94a3b8', 'middle');
+
+  // Legend
+  var legY = fY + 42;
+  h += R(W/2 - 180, legY + 5, 16, 16, '#166534', '#22c55e', 1, 2);
+  h += T(W/2 - 158, legY + 16, '活跃 (在范围内)', 11, '#86efac', 'start');
+  h += R(W/2 + 30, legY + 5, 16, 16, '#3f1a1a', '#ef4444', 1, 2);
+  h += T(W/2 + 52, legY + 16, '越界 (被跳过)', 11, '#fca5a5', 'start');
+  return h;
+}
+
+draw();
+</script>
+</body>
+</html>

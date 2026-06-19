@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPU 逻辑架构全景 — A100/H100</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:14px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.4em; color:#f8fafc; }
+.header p { color:#94a3b8; margin-top:2px; font-size:0.8em; }
+
+.main-wrap { max-width:1200px; width:100%; margin:0 auto; padding:0 16px 10px; display:flex; gap:20px; flex:1; min-height:0; }
+.main-left { flex:1; min-width:0; overflow-y:auto; display:flex; align-items:center; justify-content:center; }
+.main-right { width:370px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { flex:1; overflow-y:auto; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:14px 16px; margin-bottom:10px; }
+
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.78em; display:block; padding:2px 0; line-height:1.6; }
+.detail-panel .comment { color:#64748b; }
+.detail-panel .highlight { color:#fbbf24; }
+.detail-panel .note { color:#94a3b8; font-size:0.82em; line-height:1.6; }
+.detail-panel .note strong { color:#f8fafc; }
+
+/* 按钮 */
+.actions { display:flex; gap:6px; padding-top:10px; flex-wrap:wrap; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.actions button:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-play { background:#15803d; color:#bbf7d0; }
+.btn-reset{ background:#334155; color:#cbd5e1; }
+.btn-back { background:#1e40af; color:#bfdbfe; }
+
+/* SVG */
+svg { max-width:100%; max-height:100%; }
+.clickable { cursor:pointer; transition:all 0.15s; }
+.clickable:hover { filter:brightness(1.3); }
+.active-rect { stroke:#fbbf24 !important; stroke-width:3 !important; filter:drop-shadow(0 0 6px rgba(251,191,36,0.5)); }
+text.label { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; pointer-events:none; }
+text.title { font-weight:700; fill:#f8fafc; }
+text.desc  { font-size:10px; fill:#94a3b8; }
+text.legend-text { font-size:9px; fill:#94a3b8; }
+
+/* 工具提示 */
+.tooltip { position:fixed; background:#1e293b; border:1px solid #475569; border-radius:6px; padding:6px 10px; font-size:0.75em; pointer-events:none; z-index:100; display:none; white-space:nowrap; }
+
+.legend-row { display:flex; align-items:center; gap:4px; font-size:0.7em; color:#94a3b8; }
+.legend-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>&#128736; GPU 逻辑架构全景</h1>
+  <p>模块 2 — GPU 硬件架构与 CUDA 编程入门 &nbsp;|&nbsp; PPT 第 4-5 页 &nbsp;|&nbsp; 点击 SM 放大内部结构</p>
+</div>
+
+<div class="main-wrap">
+  <div class="main-left">
+    <svg id="main-svg" viewBox="0 0 800 740"></svg>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        &#128161; <strong>GPU 逻辑架构</strong><br><br>
+        当前显示: <strong>芯片级视图</strong> (H100)<br><br>
+        左侧展示了 H100 GPU 的整体布局:<br>
+        &bull; <strong>132 个 SM</strong> (绿色方块) 分布在芯片上<br>
+        &bull; <strong>6 个 HBM3 堆栈</strong> (橙色) 围绕四周<br>
+        &bull; <strong>NVLink 端口</strong> (紫色) 连接其他 GPU<br>
+        &bull; <strong>PCIe 接口</strong> (蓝色) 连接 CPU<br><br>
+        <strong>点击任意 SM</strong> 放大查看内部结构 →
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-back" id="btn-back" onclick="showChipView()" disabled>&#9664; 返回芯片视图</button>
+      <button class="btn-play" id="btn-play" onclick="playAll()">&#9654; 自动演示</button>
+      <button class="btn-reset" onclick="resetAll()">&#8634; 重置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ 状态 ============
+let currentView = "chip"; // "chip" | "sm"
+let activeId = null;
+
+// ============ 芯片视图 ============
+function drawChipView(highlightSm = -1) {
+  const svg = document.getElementById("main-svg");
+  const W = 800, H = 720;
+
+  let html = '';
+  // 背景
+  html += `<rect x="0" y="0" width="${W}" height="${H}" rx="16" fill="#1a1a2e" stroke="#334155" stroke-width="2"/>`;
+  html += `<text x="${W/2}" y="24" text-anchor="middle" class="title" font-size="14">NVIDIA H100 — 芯片级视图</text>`;
+
+  // 芯片主体
+  const chipX = 120, chipY = 60, chipW = 560, chipH = 560;
+  html += `<rect x="${chipX}" y="${chipY}" width="${chipW}" height="${chipH}" rx="8" fill="#0f172a" stroke="#1e3a8a" stroke-width="2"/>`;
+
+  // GPC 分区线
+  for (let g = 0; g < 8; g++) {
+    const gy = chipY + g * (chipH / 8);
+    html += `<line x1="${chipX}" y1="${gy}" x2="${chipX+chipW}" y2="${gy}" stroke="#1e3a8a" stroke-width="0.5" stroke-dasharray="4,4" opacity="0.4"/>`;
+  }
+
+  // SM 网格: 8 GPC × 约 16-17 SM each = 132 total
+  // 简化为 11 行 × 12 列 = 132 SM
+  const rows = 11, cols = 12;
+  const smW = (chipW - 20) / cols, smH = (chipH - 20) / rows;
+  const startX = chipX + 8, startY = chipY + 8;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      if (idx >= 132) break;
+      const x = startX + c * smW + 2, y = startY + r * smH + 2;
+      const w = smW - 4, h = smH - 4;
+      const isHighlighted = highlightSm === idx;
+      html += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3"
+        fill="${isHighlighted ? '#22c55e' : '#166534'}"
+        stroke="${isHighlighted ? '#fbbf24' : '#15803d'}"
+        stroke-width="${isHighlighted ? 2 : 0.8}"
+        class="clickable" data-comp="sm-${idx}"
+        onmouseover="tooltipShow(event, 'SM #${idx}<br>点击放大内部结构')"
+        onmouseout="tooltipHide()"
+        onclick="showSmView(${idx})"/>`;
+      if (isHighlighted) {
+        html += `<text x="${x+w/2}" y="${y+h/2+4}" text-anchor="middle" class="label" font-size="9" fill="#f8fafc" font-weight="700">SM${idx}</text>`;
+      }
+    }
+  }
+
+  // HBM stacks (6 个，围绕芯片)
+  const hbmPositions = [
+    {x:chipX-50, y:chipY+40, w:40, h:140},
+    {x:chipX-50, y:chipY+220, w:40, h:140},
+    {x:chipX-50, y:chipY+400, w:40, h:140},
+    {x:chipX+chipW+10, y:chipY+40, w:40, h:140},
+    {x:chipX+chipW+10, y:chipY+220, w:40, h:140},
+    {x:chipX+chipW+10, y:chipY+400, w:40, h:140},
+  ];
+  hbmPositions.forEach((p, i) => {
+    html += `<rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" rx="4"
+      fill="#7c2d12" stroke="#c2410c" stroke-width="1.5" class="clickable" data-comp="hbm-${i}"
+      onmouseover="tooltipShow(event, 'HBM3 堆栈 #${i}<br>80GB HBM3, 3.35 TB/s')"
+      onmouseout="tooltipHide()" onclick="select('hbm')"/>`;
+    html += `<text x="${p.x+p.w/2}" y="${p.y+p.h/2}" text-anchor="middle" class="label" font-size="9" fill="#fca5a5">HBM${i}</text>`;
+  });
+
+  // NVLink ports (top and bottom edges)
+  for (let i = 0; i < 6; i++) {
+    const nx = chipX + 40 + i * 100;
+    html += `<rect x="${nx}" y="${chipY-24}" width="80" height="18" rx="3"
+      fill="#6b21a8" stroke="#a855f7" stroke-width="1" class="clickable" data-comp="nvlink-${i}"
+      onmouseover="tooltipShow(event, 'NVLink 端口 (H100: Gen4 900GB/s | B200: Gen5 1.8TB/s)')"
+      onmouseout="tooltipHide()" onclick="select('nvlink')"/>`;
+  }
+
+  // PCIe 接口 (底部)
+  html += `<rect x="${chipX+chipW/2-80}" y="${chipY+chipH+12}" width="160" height="18" rx="3"
+    fill="#1e3a8a" stroke="#3b82f6" stroke-width="1" class="clickable" data-comp="pcie"
+    onmouseover="tooltipShow(event, 'PCIe Gen5 x16<br>带宽: 128 GB/s 双向')"
+    onmouseout="tooltipHide()" onclick="select('pcie')"/>`;
+  html += `<text x="${chipX+chipW/2}" y="${chipY+chipH+50}" text-anchor="middle" class="label" font-size="8" fill="#3b82f6">PCIe Gen5 x16 → CPU (128 GB/s)</text>`;
+
+  // 图例
+  const lx = 130, ly = 685;
+  html += `<rect x="${lx}" y="${ly}" width="14" height="10" rx="2" fill="#166534" stroke="#15803d" stroke-width="0.5"/>`;
+  html += `<text x="${lx+18}" y="${ly+9}" class="legend-text">SM (132个)</text>`;
+  html += `<rect x="${lx+120}" y="${ly}" width="14" height="10" rx="2" fill="#7c2d12" stroke="#c2410c" stroke-width="0.5"/>`;
+  html += `<text x="${lx+138}" y="${ly+9}" class="legend-text">HBM3 (6 stacks, 80GB)</text>`;
+  html += `<rect x="${lx+290}" y="${ly}" width="14" height="10" rx="2" fill="#6b21a8" stroke="#a855f7" stroke-width="0.5"/>`;
+  html += `<text x="${lx+308}" y="${ly+9}" class="legend-text">NVLink</text>`;
+  html += `<rect x="${lx+440}" y="${ly}" width="14" height="10" rx="2" fill="#1e3a8a" stroke="#3b82f6" stroke-width="0.5"/>`;
+  html += `<text x="${lx+458}" y="${ly+9}" class="legend-text">PCIe Gen5</text>`;
+
+  svg.innerHTML = html;
+  currentView = "chip";
+  document.getElementById("btn-back").disabled = true;
+}
+
+// ============ SM 内部视图 ============
+function drawSmView() {
+  const svg = document.getElementById("main-svg");
+  const W = 800, H = 720;
+
+  let html = '';
+  html += `<rect x="0" y="0" width="${W}" height="${H}" rx="16" fill="#1a1a2e" stroke="#334155" stroke-width="2"/>`;
+  html += `<text x="${W/2}" y="24" text-anchor="middle" class="title" font-size="14">SM (Streaming Multiprocessor) 内部结构 — H100</text>`;
+
+  // SM 主体
+  const sx = 40, sy = 45, sw = 720, sh = 570;
+  html += `<rect x="${sx}" y="${sy}" width="${sw}" height="${sh}" rx="10" fill="#0f172a" stroke="#15803d" stroke-width="3"/>`;
+
+  // ===== 区域划分 =====
+  // Warp Scheduler + Dispatch (顶部)
+  html += `<rect x="${sx+20}" y="${sy+15}" width="${sw-40}" height="50" rx="6" fill="#1e1e3a" stroke="#a855f7" stroke-width="1.5"/>`;
+  html += `<text x="${W/2}" y="${sy+34}" text-anchor="middle" class="label" font-size="12" fill="#c084fc" font-weight="700">Warp Scheduler ×4 + Dispatch Units</text>`;
+  html += `<text x="${W/2}" y="${sy+52}" text-anchor="middle" class="label" font-size="9" fill="#94a3b8">4 个调度器，每周期各发射 1 个 warp (32 threads) 指令 — SIMT 的执行引擎</text>`;
+
+  // CUDA Cores 区域 (左中)
+  const ccx = sx+20, ccy = sy+80, ccw = 280, cch = 220;
+  html += `<rect x="${ccx}" y="${ccy}" width="${ccw}" height="${cch}" rx="6" fill="#1a2e1a" stroke="#22c55e" stroke-width="1.5"/>`;
+  html += `<text x="${ccx+ccw/2}" y="${ccy+18}" text-anchor="middle" class="label" font-size="11" fill="#86efac" font-weight="700">CUDA Cores (128个/SM)</text>`;
+  // 方格阵列
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 16; c++) {
+      html += `<rect x="${ccx+15+c*16}" y="${ccy+30+r*22}" width="12" height="16" rx="2"
+        fill="#166534" stroke="#22c55e" stroke-width="0.5" class="clickable" data-comp="cuda-core"
+        onmouseover="tooltipShow(event, 'CUDA Core<br>FP32/INT32 运算单元')"
+        onmouseout="tooltipHide()" onclick="select('cuda-core')"/>`;
+    }
+  }
+  html += `<text x="${ccx+ccw/2}" y="${ccy+cch-8}" text-anchor="middle" class="label" font-size="9" fill="#94a3b8">每个时钟: 1× FP32 FMA (乘加) 或 1× INT32</text>`;
+
+  // Tensor Cores 区域 (右中)
+  const tcx = sx+320, tcy = sy+80, tcw = 380, tch = 220;
+  html += `<rect x="${tcx}" y="${tcy}" width="${tcw}" height="${tch}" rx="6" fill="#2e1a0f" stroke="#f59e0b" stroke-width="1.5"/>`;
+  html += `<text x="${tcx+tcw/2}" y="${tcy+18}" text-anchor="middle" class="label" font-size="11" fill="#fcd34d" font-weight="700">Tensor Cores (4个/SM) — AI 加速核心</text>`;
+  // 4 个大块
+  for (let i = 0; i < 4; i++) {
+    html += `<rect x="${tcx+20+i*90}" y="${tcy+40}" width="70" height="140" rx="6"
+      fill="#78350f" stroke="#f59e0b" stroke-width="1.5" class="clickable" data-comp="tensor-core"
+      onmouseover="tooltipShow(event, '第4代 Tensor Core<br>FP8: 1979 TFLOPS (H100 总计)')"
+      onmouseout="tooltipHide()" onclick="select('tensor-core')"/>`;
+    html += `<text x="${tcx+20+i*90+35}" y="${tcy+100}" text-anchor="middle" class="label" font-size="10" fill="#fcd34d" font-weight="700">Tensor</text>`;
+    html += `<text x="${tcx+20+i*90+35}" y="${tcy+115}" text-anchor="middle" class="label" font-size="9" fill="#d97706">Core ${i}</text>`;
+    html += `<text x="${tcx+20+i*90+35}" y="${tcy+160}" text-anchor="middle" class="label" font-size="8" fill="#b45309">4×4 MMA</text>`;
+  }
+
+  // Register File (左下方)
+  const rfx = sx+20, rfy = sy+320, rfw = 280, rfh = 100;
+  html += `<rect x="${rfx}" y="${rfy}" width="${rfw}" height="${rfh}" rx="6" fill="#0f1a2e" stroke="#60a5fa" stroke-width="1.5"/>`;
+  html += `<text x="${rfx+rfw/2}" y="${rfy+18}" text-anchor="middle" class="label" font-size="11" fill="#93c5fd" font-weight="700">Register File</text>`;
+  html += `<text x="${rfx+rfw/2}" y="${rfy+45}" text-anchor="middle" class="label" font-size="14" fill="#60a5fa" font-weight="700">65,536 × 32-bit</text>`;
+  html += `<text x="${rfx+rfw/2}" y="${rfy+70}" text-anchor="middle" class="label" font-size="9" fill="#94a3b8">每个线程最多 255 个寄存器</text>`;
+  html += `<text x="${rfx+rfw/2}" y="${rfy+85}" text-anchor="middle" class="label" font-size="9" fill="#94a3b8">~1ns 延迟 — 线程私有</text>`;
+
+  // L1 / Shared Memory (右下方)
+  const l1x = sx+320, l1y = sy+320, l1w = 380, l1h = 100;
+  html += `<rect x="${l1x}" y="${l1y}" width="${l1w}" height="${l1h}" rx="6" fill="#0f1a2e" stroke="#60a5fa" stroke-width="1.5"/>`;
+  html += `<text x="${l1x+l1w/2}" y="${l1y+18}" text-anchor="middle" class="label" font-size="11" fill="#93c5fd" font-weight="700">L1 Cache / Shared Memory (可配置)</text>`;
+  html += `<text x="${l1x+l1w/2}" y="${l1y+50}" text-anchor="middle" class="label" font-size="14" fill="#60a5fa" font-weight="700">256 KB</text>`;
+  html += `<text x="${l1x+l1w/2}" y="${l1y+75}" text-anchor="middle" class="label" font-size="9" fill="#94a3b8">L1 cache ~100ns / Shared Memory ~20ns — Block 内共享</text>`;
+
+  // 关键数据标注
+  html += `<rect x="${sx+320}" y="${sy+440}" width="380" height="100" rx="6" fill="#1e293b" stroke="#475569" stroke-width="1"/>`;
+  html += `<text x="${sx+320+190}" y="${sy+460}" text-anchor="middle" class="label" font-size="9" fill="#94a3b8">SM 关键指标 (H100)</text>`;
+  html += `<text x="${sx+340}" y="${sy+480}" class="label" font-size="9" fill="#e2e8f0">最大线程数: 2048 / SM (64 warps)</text>`;
+  html += `<text x="${sx+340}" y="${sy+496}" class="label" font-size="9" fill="#e2e8f0">最大 Block 数: 32 / SM</text>`;
+  html += `<text x="${sx+340}" y="${sy+512}" class="label" font-size="9" fill="#e2e8f0">Register File 限制每 SM 线程数上限</text>`;
+  html += `<text x="${sx+340}" y="${sy+528}" class="label" font-size="9" fill="#e2e8f0">Shared Memory 限制每 SM Block 数上限</text>`;
+
+  // L2 Cache (SM 外部)
+  html += `<rect x="${sx+20}" y="${sy+sh+10}" width="${sw-40}" height="40" rx="6" fill="#0f172a" stroke="#475569" stroke-width="1" stroke-dasharray="6,3"/>`;
+  html += `<text x="${W/2}" y="${sy+sh+35}" text-anchor="middle" class="label" font-size="10" fill="#64748b">L2 Cache: 50 MB (全 GPU 所有 SM 共享) — 介于 SM 和 HBM 之间</text>`;
+
+  svg.innerHTML = html;
+  currentView = "sm";
+  document.getElementById("btn-back").disabled = false;
+}
+
+// ============ 视图切换 ============
+function showChipView() {
+  activeId = null;
+  drawChipView(-1);
+  document.getElementById("detail-panel").innerHTML =
+    `<div class="note">
+      &#128161; <strong>GPU 逻辑架构 — 芯片级</strong><br><br>
+      当前显示: <strong>H100 芯片级视图</strong><br><br>
+      &bull; <strong>132 个 SM</strong> (绿色方块) 分布在芯片上<br>
+      &bull; <strong>6 个 HBM3 堆栈</strong> (橙色) 围绕四周<br>
+      &bull; <strong>NVLink 端口</strong> (紫色) 连接其他 GPU<br>
+      &bull; <strong>PCIe 接口</strong> (蓝色) 连接 CPU<br><br>
+      <strong>点击任意 SM</strong> 放大查看内部结构 →
+    </div>`;
+}
+
+function showSmView(smIdx) {
+  activeId = `sm-${smIdx}`;
+  drawSmView();
+  document.getElementById("detail-panel").innerHTML =
+    `<div class="note">
+      &#128736; <strong>SM (Streaming Multiprocessor) — GPU 的心脏</strong><br><br>
+      H100 有 <strong>132 个 SM</strong>，每个 SM 包含:<br><br>
+      <table style="width:100%;font-size:0.8em;border-collapse:collapse">
+        <tr><td style="color:#86efac;padding:2px 4px">CUDA Core</td><td style="color:#94a3b8;padding:2px 4px">128个/SM</td><td style="color:#64748b;padding:2px 4px">FP32 FMA</td></tr>
+        <tr><td style="color:#fcd34d;padding:2px 4px">Tensor Core</td><td style="color:#94a3b8;padding:2px 4px">4个/SM</td><td style="color:#64748b;padding:2px 4px">4×4 MMA</td></tr>
+        <tr><td style="color:#c084fc;padding:2px 4px">Warp Scheduler</td><td style="color:#94a3b8;padding:2px 4px">4个/SM</td><td style="color:#64748b;padding:2px 4px">发射 warp 指令</td></tr>
+        <tr><td style="color:#93c5fd;padding:2px 4px">Register File</td><td style="color:#94a3b8;padding:2px 4px">65536×32b</td><td style="color:#64748b;padding:2px 4px">~1ns</td></tr>
+        <tr><td style="color:#93c5fd;padding:2px 4px">L1/SMEM</td><td style="color:#94a3b8;padding:2px 4px">256KB</td><td style="color:#64748b;padding:2px 4px">~20ns</td></tr>
+      </table>
+    </div>`;
+}
+
+// ============ 组件详情 ============
+const details = {
+  'cuda-core': `<code><span class="highlight">CUDA Core</span> — 基础浮点/整数运算单元
+<span class="comment">// H100: 128 个/SM × 132 SM = 16,896 CUDA Cores</span>
+
+<span class="highlight">每个 CUDA Core 每周期完成</span>:
+  1× FP32 FMA (a×b+c)  — 单精度浮点乘加
+  或 1× INT32 运算      — 整数运算
+
+<span class="highlight">FP32 vs FP64 性能比</span>:
+  H100 FP32 ~60 TFLOPS
+  H100 FP64 ~30 TFLOPS (1:2 — 故意的市场定位)
+  消费级 RTX 的 FP64 只有 FP32 的 1/64
+
+<span class="highlight">为什么比 CPU Core 简单</span>:
+  - 无分支预测
+  - 无乱序执行 (in-order)
+  - 缓存极小
+  - 设计目标: 面积小、数量多、吞吐高</code>`,
+
+  'tensor-core': `<code><span class="highlight">Tensor Core</span> — AI 加速的秘密武器
+<span class="comment">// H100: 4 个/SM × 132 SM = 528 Tensor Cores</span>
+
+<span class="highlight">核心能力</span>:
+  一个时钟周期完成 4×4 矩阵乘加 (MMA)
+  D = A₄ₓ₄ × B₄ₓ₄ + C₄ₓ₄
+
+<span class="highlight">精度演进</span>:
+  Volta  (2017): FP16           → 125 TFLOPS (V100)
+  Ampere (2020): TF32, BF16, INT8 → 312 TFLOPS (A100)
+  Hopper (2022): FP8 (E4M3/E5M0)  → 1979 TFLOPS (H100)
+  Blackwell(2024): FP4              → 翻倍
+
+<span class="highlight">为什么 AI 需要 Tensor Core</span>:
+  大模型的核心运算是矩阵乘 (GEMM)
+  Tensor Core 专门加速这个 → 比 CUDA Core 快 33× (H100)</code>`,
+
+  hbm: `<code><span class="highlight">HBM3 (High Bandwidth Memory)</span>
+<span class="comment">// H100: 6 个堆栈, 共 80GB, 3.35 TB/s</span>
+
+<span class="highlight">为什么快</span>:
+  - 3D 堆叠: 多层 DRAM die 垂直堆叠 (TSV 硅通孔)
+  - 超宽总线 (5120-bit 总计) vs DDR5 的 64-bit
+  - 带宽差 8-10 倍
+
+<span class="highlight">为什么 AI 需要这么大带宽</span>:
+  大模型推理的 decode 阶段是 Memory-bandwidth-bound
+  每生成一个 token 要从显存读取整个模型权重一次
+  → HBM 带宽直接决定推理吞吐
+
+<span class="highlight">位于 GPU 芯片周围</span>:
+  物理上靠近计算单元, 缩短数据路径</code>`,
+
+  nvlink: `<code><span class="highlight">NVLink — GPU 专用高速互连</span>
+<span class="comment">// GPU 专用高速互连, 是 PCIe Gen5 的 14 倍</span>
+
+<span class="highlight">带宽演进</span>:
+  Gen1(P100): 160 GB/s → Gen4(H100): 900 GB/s → Gen5(B200): 1.8 TB/s
+
+<span class="highlight">与 NVSwitch 配合</span>:
+  8 GPU + 4 NVSwitch → 任意两 GPU 间全带宽
+
+<span class="highlight">关键</span>:
+  消费级 RTX 显卡不支持 NVLink</code>`,
+
+  pcie: `<code><span class="highlight">PCIe Gen5 x16</span>
+<span class="comment">// GPU 与 CPU 通信的通用总线</span>
+
+<span class="highlight">带宽</span>:
+  Gen5 x16: 128 GB/s 双向 (64 GB/s 单向)
+
+<span class="highlight">瓶颈</span>:
+  CPU→GPU 拷贝数据的瓶颈在 PCIe
+  远小于 HBM 带宽 (3.35 TB/s)
+  → 尽可能减少 Host↔Device 数据传输</code>`,
+};
+
+function select(id) {
+  document.querySelectorAll(".active-rect").forEach(el => el.classList.remove("active-rect"));
+  const el = document.querySelector(`[data-comp="${id}"]`);
+  if (el) el.classList.add("active-rect");
+  const panel = document.getElementById("detail-panel");
+  if (details[id]) panel.innerHTML = details[id];
+}
+
+// ============ Tooltip ============
+function tooltipShow(e, text) {
+  const tt = document.getElementById("tooltip");
+  tt.innerHTML = text;
+  tt.style.display = "block";
+  tt.style.left = (e.clientX + 12) + "px";
+  tt.style.top = (e.clientY - 20) + "px";
+}
+function tooltipHide() { document.getElementById("tooltip").style.display = "none"; }
+
+// ============ 自动演示 ============
+async function playAll() {
+  const btn = document.getElementById("btn-play");
+  btn.disabled = true;
+  showChipView();
+  await new Promise(r => setTimeout(r, 1500));
+  // 高亮几个 SM 然后放大
+  drawChipView(0);
+  select('sm-0');
+  await new Promise(r => setTimeout(r, 1200));
+  showSmView(0);
+  await new Promise(r => setTimeout(r, 1500));
+  // 依次高亮各组件
+  for (const id of ['cuda-core','tensor-core','hbm','nvlink','pcie']) {
+    select(id);
+    await new Promise(r => setTimeout(r, 1200));
+  }
+  btn.disabled = false;
+}
+
+function resetAll() {
+  activeId = null;
+  document.querySelectorAll(".active-rect").forEach(el => el.classList.remove("active-rect"));
+  showChipView();
+}
+
+// ============ 启动 ============
+drawChipView();
+</script>
+</body>
+</html>

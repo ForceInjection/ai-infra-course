@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shared Memory Tiling — 矩阵乘法数据流</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:12px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#f8fafc; }
+.header p { color:#94a3b8; margin-top:2px; font-size:0.78em; }
+
+.main-wrap { max-width:1250px; width:100%; margin:0 auto; padding:0 12px 8px; display:flex; gap:16px; flex:1; min-height:0; }
+.main-left { flex:1; min-width:0; overflow-y:auto; display:flex; align-items:center; justify-content:center; }
+.main-right { width:350px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { flex:1; overflow-y:auto; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:12px 14px; margin-bottom:8px; }
+
+.detail-panel .note { color:#94a3b8; font-size:0.78em; line-height:1.6; }
+.detail-panel .note strong { color:#f8fafc; }
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.8em; background:#1e293b; padding:1px 4px; border-radius:3px; }
+
+.actions { display:flex; gap:5px; padding-top:8px; flex-wrap:wrap; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.8em; cursor:pointer; font-weight:600; background:#334155; color:#cbd5e1; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.btn-play { background:#15803d !important; color:#bbf7d0 !important; }
+.btn-next { background:#1e40af !important; color:#bfdbfe !important; }
+
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>&#128230; Shared Memory Tiling — 矩阵乘法数据流</h1>
+  <p>模块 2 — GPU 硬件架构与 CUDA 编程入门 &nbsp;|&nbsp; PPT 第 35-36 页 &nbsp;|&nbsp; Demo: M=N=K=8, TILE=4</p>
+</div>
+<div class="main-wrap">
+  <div class="main-left">
+    <svg id="main-svg" viewBox="0 0 960 680"></svg>
+  </div>
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        &#128161; <strong>Shared Memory Tiling</strong><br><br>
+        <strong>问题</strong>: naive 矩阵乘法中，Global Memory 每个元素被读取 <code>K</code> 次<br><br>
+        <strong>方案</strong>: 切成 TILE 小块，每次加载一个 tile 到 Shared Memory 后反复读取<br><br>
+        <strong>A/B 和 As/Bs 的关系</strong>:<br>
+        As 是<strong>从 A 复制</strong>的 TILE×TILE 子块<br>
+        Bs 是<strong>从 B 复制</strong>的 TILE×TILE 子块<br>
+        Block 内线程协作加载 → 在 Shared Memory 中反复读取 → 计算 → <code>__syncthreads()</code> → 加载下一 tile<br><br>
+        <strong>为什么 C 始终高亮同一块?</strong><br>
+        C 的一个子块需要 K 维上的<strong>所有 tile 累加</strong>才能完成:<br>
+        <code>C[0:4,0:4] = A[0:4,0:4]×B[0:4,0:4]</code> (Tile 0)<br>
+        <code style="opacity:0.5">　　　　　+ A[0:4,4:8]×B[4:8,0:4]</code> (Tile 1)<br><br>
+        两个 tile <strong>沿 K 维度接力</strong>，部分和累加到<strong>同一个 C 子块</strong>。<br>
+        C 全矩阵共 4 个子块 (2×2)，每个子块都需要遍历全部 TILES 个 tile。<br><br>
+        Shared Memory <strong>~20ns</strong> vs Global Memory <strong>~600ns</strong> — 快 30 倍<br><br>
+        <span style="opacity:0.5">参考: <a href="https://www.yuque.com/u41800946/nquqpa/eo7gykiyhg8xi2gg" style="color:#94a3b8" target="_blank">矩阵乘法的 CUDA 实现、优化及性能分析</a></span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-next" onclick="nextStep()" id="btn-next">下一步 &#9654;</button>
+      <button class="btn-play" onclick="playAll()">&#9654; 自动</button>
+      <button onclick="resetAll()">&#8634; 重置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TILE = 4, M = 8, N = 8, K = 8, TILES = K / TILE;
+const G = 30, S = 44;
+let step = 0;
+const totalSteps = TILES * 2 + 2;
+
+function nextStep() { if (step < totalSteps) step++; draw(); }
+function resetAll() { step = 0; draw(); }
+async function playAll() {
+  resetAll();
+  for (let i = 0; i <= totalSteps; i++) {
+    await new Promise(r => setTimeout(r, 1100));
+    step++; draw();
+  }
+}
+
+function R(x, y, w, h, f, s, sw, rx) {
+  sw = sw || 0.5; rx = rx || 2;
+  return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+rx+'" fill="'+f+'" stroke="'+s+'" stroke-width="'+sw+'"/>';
+}
+function T(x, y, text, size, fill, anchor, weight) {
+  return '<text x="'+x+'" y="'+y+'" text-anchor="'+(anchor||'middle')+'" font-size="'+size+'" fill="'+fill+'" font-weight="'+(weight||'normal')+'" font-family="sans-serif">'+text+'</text>';
+}
+function mat(label, fg, bg, x, y, rows, cols, cs) {
+  var h = T(x + cols*cs/2, y - 10, label + ' (' + rows + '×' + cols + ')', 12, fg);
+  for (var r = 0; r < rows; r++)
+    for (var c = 0; c < cols; c++)
+      h += R(x + c*cs, y + r*cs, cs-1, cs-1, bg, '#334155');
+  return h;
+}
+function fill(x, y, rows, cols, cs, f, s, sw, label, tf) {
+  var h = '';
+  for (var r = 0; r < rows; r++)
+    for (var c = 0; c < cols; c++)
+      h += R(x + c*cs, y + r*cs, cs-1, cs-1, f, s, sw) + (label ? T(x + c*cs + cs/2, y + r*cs + cs/2 + 5, label, 10, tf||'#fff') : '');
+  return h;
+}
+
+function draw() {
+  var svg = document.getElementById('main-svg');
+  var W = 960, H = 680;
+  var h = R(0, 0, W, H, '#1a1a2e', '#334155', 2, 16);
+
+  var names = [
+    '初始状态 — C = A(' + M + '×' + K + ') × B(' + K + '×' + N + ')，TILE=' + TILE + '，共 ' + TILES + ' 个 tile',
+    'Step 1: 加载 Tile 0 — 从 Global Memory → Shared Memory (每个元素仅读 1 次)',
+    'Step 1: 计算 Tile 0 — 从 Shared Memory 做乘加 → 累加到 C (~20ns，比 Global 快 30×)',
+    'Step 2: __syncthreads() → 加载 Tile 1 — 从 Global Memory → Shared Memory',
+    'Step 2: 计算 Tile 1 — 从 Shared Memory 做乘加 → 累加到 C',
+    '完成! 写出 C — 所有 tile 累加完毕',
+    '总结 — Naive 每个元素读 ' + K + ' 次 vs Tiled 每个元素读 1 次'
+  ];
+  h += T(W/2, 22, names[Math.min(step, names.length-1)], 14, '#f8fafc');
+
+  var topY = 70, aW = M * G, bW = K * G, cW = M * G;
+  var totalW = aW + 36 + 20 + 36 + bW + 46 + cW;
+  var leftPad = (W - totalW) / 2;
+  var ax = leftPad, ay = topY;
+  var bx = ax + aW + 36 + 20 + 36, by = topY;
+  var cx = bx + bW + 46, cy = topY;
+
+  h += mat('A — Global Memory', '#60a5fa', '#1e3a8a', ax, ay, M, K, G);
+  var aBgap = bx - (ax + aW);
+  var bCgap = cx - (bx + bW);
+  h += T(ax + aW + aBgap/2, ay + aW/2 + 5, '×', 20, '#94a3b8');
+  h += mat('B — Global Memory', '#f59e0b', '#78350f', bx, by, K, N, G);
+  h += T(bx + bW + bCgap/2, ay + aW/2 + 5, '=', 20, '#94a3b8');
+  h += mat('C — Global Memory', '#22c55e', '#0f1a0f', cx, cy, M, N, G);
+
+  // Connecting explanation: Global Memory → Shared Memory
+  var connY = ay + aW + 50;
+  h += T(W/2, connY, '▾ 将 A/B 的 tile 子块复制到 Shared Memory  ▾', 10, '#94a3b8');
+  h += T(W/2, connY + 14, 'Global Memory 只读 1 次  →  Shared Memory 反复读 (快 30×)', 9, '#64748b');
+
+  var smTitleY = connY + 28;
+  var smY = smTitleY + 34;
+  var smTotalW = 2 * (TILE * S) + 160;
+  var sax = (W - smTotalW) / 2, say = smY;
+  var sbx = sax + TILE * S + 160, sby = smY;
+  var gapCx = sax + TILE * S + 80;
+
+  h += T(W/2, smTitleY, 'Shared Memory (on-chip, ~20ns) — 每个 Block 的私有快速存储', 13, '#f8fafc');
+
+  h += T(sax + TILE*S/2, say - 6, 'As — 从 A 复制的 tile (4×4)', 12, '#a78bfa');
+  h += R(sax - 3, say - 3, TILE*S + 6, TILE*S + 6, 'none', '#a78bfa', 2, 4);
+  for (var r = 0; r < TILE; r++) for (var c = 0; c < TILE; c++)
+    h += R(sax + c*S, say + r*S, S-1, S-1, '#1e1e3a', '#334155');
+
+  h += T(sbx + TILE*S/2, sby - 6, 'Bs — 从 B 复制的 tile (4×4)', 12, '#fbbf24');
+  h += R(sbx - 3, sby - 3, TILE*S + 6, TILE*S + 6, 'none', '#fbbf24', 2, 4);
+  for (var r = 0; r < TILE; r++) for (var c = 0; c < TILE; c++)
+    h += R(sbx + c*S, sby + r*S, S-1, S-1, '#1e1e3a', '#334155');
+
+  if (step < TILES * 2 + 1) {
+    var ti = Math.floor((Math.max(step-1,0)) / 2);
+    var op = ti === 0 ? 'C =' : 'C +=';
+    h += T(gapCx, say + TILE*S/2 - 16, op + ' As × Bs', 12, '#fbbf24', 'middle', 'bold');
+    h += T(gapCx, say + TILE*S/2 + 4, ti === 0 ? '(部分和 — Tile 0 的结果)' : '(累加 Tile 1 — 得到最终 C₀₀)', 9, '#94a3b8');
+    h += T(gapCx, say + TILE*S/2 + 30, '⟶ 写入', 10, '#64748b');
+    h += T(gapCx, say + TILE*S/2 + 46, 'Global Memory C[0:4,0:4]', 10, '#64748b');
+  } else {
+    h += T(gapCx, say + TILE*S/2 - 4, '✓ C[0:4,0:4] 完成', 13, '#22c55e', 'middle', 'bold');
+    h += T(gapCx, say + TILE*S/2 + 18, 'C 全矩阵共 4 个这样的子块', 10, '#64748b');
+  }
+
+  if (step >= 1 && step <= TILES * 2) {
+    var ti = Math.floor((step - 1) / 2);
+    var isC = (step - 1) % 2 === 1;
+    var k0 = ti * TILE;
+    h += R(ax + k0*G, ay, TILE*G, TILE*G, 'none', '#60a5fa', 3, 0);
+    h += R(bx, by + k0*G, TILE*G, TILE*G, 'none', '#f59e0b', 3, 0);
+    if (isC) {
+      h += fill(sax, say, TILE, TILE, S, '#312e81', '#a78bfa', 1.5, 'A'+ti, '#c4b5fd');
+      h += fill(sbx, sby, TILE, TILE, S, '#78350f', '#fbbf24', 1.5, 'B'+ti, '#fde68a');
+      h += fill(cx, cy, TILE, TILE, G, '#14532d', '#22c55e', 2, 'C', '#86efac');
+      h += T(cx + TILE*G/2, cy - 24, 'C[0:4,0:4]', 10, '#22c55e', 'middle', 'bold');
+      h += T(gapCx, say + TILE*S/2 - 40, '⚡ 计算中', 12, '#fbbf24', 'middle', 'bold');
+    } else {
+      h += T(sax + TILE*S/2, say - 18, '▲ 加载 A'+ti+' → As', 11, '#a78bfa', 'middle', 'bold');
+      h += T(sbx + TILE*S/2, sby - 18, '▲ 加载 B'+ti+' → Bs', 11, '#fbbf24', 'middle', 'bold');
+    }
+  }
+
+  if (step >= TILES * 2 + 1) {
+    h += fill(cx, cy, M, N, G, '#14532d', '#22c55e', 1, 'C', '#86efac');
+  }
+
+  if (step >= totalSteps) {
+    var sy = say + TILE*S + 16;
+    h += R(ax, sy, W - ax*2, 56, '#1e293b', '#475569', 1, 8);
+    h += T(ax + 20, sy + 22, 'Naive: 每个元素从 Global Memory 读 ' + K + ' 次 → 带宽浪费 ' + K + '×', 13, '#ef4444', 'start');
+    h += T(ax + 20, sy + 46, 'Tiled: 每个元素从 Global Memory 读 1 次 (加载进 Shared Memory)，之后从 Shared Memory 读 ' + (K/TILE) + ' 次 (Shared Memory 快 30×)', 13, '#22c55e', 'start');
+  }
+
+  h += T(W - 16, H - 16, 'A/蓝 B/橙 C/绿 Shared/紫·黄', 9, '#64748b', 'end');
+  svg.innerHTML = h;
+}
+
+draw();
+</script>
+</body>
+</html>

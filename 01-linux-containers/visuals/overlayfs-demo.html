@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OverlayFS 分层存储 & Copy-on-Write 可视化</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+.header { text-align: center; padding: 20px 16px 8px; }
+.header h1 { font-size: 1.5em; color: #f8fafc; }
+.header p { color: #94a3b8; margin-top: 2px; font-size: 0.85em; }
+
+.main-wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+
+/* 图例 */
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.75em; color: #94a3b8; padding: 8px 0 16px; justify-content: center; }
+.legend span { display: flex; align-items: center; gap: 4px; }
+.legend .dot { width: 10px; height: 10px; border-radius: 3px; }
+
+/* 垂直堆叠 */
+.stack { display: flex; flex-direction: column; gap: 0; position: relative; margin-bottom: 8px; }
+
+/* 每一层 */
+.layer { background: #1e293b; border: 3px solid #334155; border-radius: 12px; overflow: hidden; position: relative; }
+.layer-header { padding: 10px 16px; font-weight: 700; font-size: 0.9em; display: flex; align-items: center; gap: 8px; }
+.layer-header .icon { font-size: 1.3em; }
+.layer-header .hint { font-size: 0.75em; font-weight: 400; color: #94a3b8; margin-left: auto; }
+.layer-body { padding: 4px 12px 10px; display: flex; flex-wrap: wrap; gap: 6px; min-height: 52px; align-items: flex-start; }
+
+/* 层颜色 */
+.layer-merged { border-color: #2563eb; z-index: 3; }
+.layer-merged .layer-header { background: #1e3a8a; }
+.layer-upper  { border-color: #c2410c; z-index: 2; margin-top: -4px; }
+.layer-upper  .layer-header { background: #7c2d12; }
+.layer-lower  { border-color: #15803d; z-index: 1; margin-top: -4px; }
+.layer-lower  .layer-header { background: #14532d; }
+
+/* 层间箭头 */
+.arrow-down { display: flex; justify-content: center; padding: 2px 0; color: #64748b; font-size: 1.2em; letter-spacing: 4px; margin-top: -2px; }
+.arrow-down span { opacity: 0.5; }
+
+.label { display: inline-block; font-size: 0.68em; padding: 1px 6px; border-radius: 4px; margin-left: 4px; }
+.label-ro { background: #15803d; color: #86efac; }
+.label-rw { background: #c2410c; color: #fca5a5; }
+
+/* 文件条目 */
+.file-entry { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 6px; background: #0f172a; border: 1px solid #334155; font-size: 0.8em; font-family: "SF Mono", "Fira Code", monospace; transition: all 0.3s; white-space: nowrap; }
+.file-entry .name { }
+.file-entry .size { color: #64748b; font-size: 0.78em; margin-left: 2px; }
+.file-icon { font-size: 1em; }
+.file-new { border-color: #f59e0b; box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+.file-modified { border-color: #3b82f6; box-shadow: 0 0 6px rgba(59,130,246,0.4); }
+.file-deleted { border-color: #ef4444; opacity: 0.45; text-decoration: line-through; }
+.file-copied { border-color: #8b5cf6; }
+.file-masked { border-color: #475569; opacity: 0.55; }
+.file-masked .masked-hint { font-size: 0.78em; }
+.whiteout { color: #ef4444; font-style: italic; }
+.cow-highlight { animation: cowPulse 1s ease-in-out 3; }
+@keyframes cowPulse { 0%,100% { box-shadow: 0 0 4px rgba(139,92,246,0.5); } 50% { box-shadow: 0 0 14px rgba(139,92,246,0.9); } }
+
+/* COW 动画：文件从 lower "飞"到 upper */
+@keyframes cowFly {
+  0%   { transform: translateY(0); background: #1e293b; }
+  30%  { transform: translateY(-12px); background: #2e1065; border-color: #8b5cf6; }
+  70%  { transform: translateY(-12px); background: #2e1065; border-color: #8b5cf6; }
+  100% { transform: translateY(0); background: #1e293b; border-color: #8b5cf6; }
+}
+.cow-fly { animation: cowFly 1.2s ease-in-out; }
+
+.empty-hint { color: #475569; font-size: 0.8em; font-style: italic; padding: 6px 0; }
+
+/* 操作区 */
+.actions { padding: 8px 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.actions button { padding: 7px 14px; border: none; border-radius: 6px; font-size: 0.82em; cursor: pointer; font-weight: 600; transition: all 0.15s; }
+.actions button:hover { transform: translateY(-1px); filter: brightness(1.15); }
+.btn-read   { background: #1e40af; color: #bfdbfe; }
+.btn-modify { background: #c2410c; color: #fed7aa; }
+.btn-create { background: #b45309; color: #fef3c7; }
+.btn-delete { background: #b91c1c; color: #fecaca; }
+.btn-reset  { background: #334155; color: #cbd5e1; }
+
+/* 日志 */
+.log { padding-bottom: 16px; }
+.log-inner { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 8px 12px; font-family: "SF Mono", "Fira Code", monospace; font-size: 0.75em; max-height: 120px; overflow-y: auto; }
+.log-entry { padding: 2px 0; border-bottom: 1px solid #1e293b; }
+.log-entry .ts { color: #64748b; }
+.log-entry .act { font-weight: 700; }
+.act.read { color: #60a5fa; } .act.write { color: #f97316; } .act.delete { color: #ef4444; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>&#128451; OverlayFS 分层存储 + Copy-on-Write 可视化</h1>
+  <p>模块 1 — Linux 基础与容器技术入门 &nbsp;|&nbsp; PPT 第 25–27 页</p>
+</div>
+
+<div class="main-wrap">
+  <div class="legend">
+    <span><span class="dot" style="background:#86efac"></span> lowerdir: 只读基础层</span>
+    <span><span class="dot" style="background:#fca5a5"></span> upperdir: 可写容器层</span>
+    <span><span class="dot" style="background:#93c5fd"></span> merged: 统一视图</span>
+    <span><span class="dot" style="background:#f59e0b"></span> 新建</span>
+    <span><span class="dot" style="background:#8b5cf6"></span> COW 复制</span>
+    <span><span class="dot" style="background:#ef4444"></span> whiteout</span>
+  </div>
+
+  <div class="stack">
+    <!-- merged -->
+    <div class="layer layer-merged">
+      <div class="layer-header"><span class="icon">&#128203;</span> merged <span class="label label-rw">统一视图</span><span class="hint">容器内看到的文件系统 — mount -t overlay 的结果</span></div>
+      <div class="layer-body" id="merged-panel"></div>
+    </div>
+
+    <div class="arrow-down"><span>&#8593; &#8593; &#8593;</span> mount -t overlay lower + upper <span>&#8593; &#8593; &#8593;</span></div>
+
+    <!-- upper -->
+    <div class="layer layer-upper">
+      <div class="layer-header"><span class="icon">&#128221;</span> upperdir <span class="label label-rw">可写</span><span class="hint">容器修改存放处 — 新建 / COW 副本 / whiteout</span></div>
+      <div class="layer-body" id="upper-panel"></div>
+    </div>
+
+    <div class="arrow-down"><span>&#8593; &#8593; &#8593;</span></div>
+
+    <!-- lower -->
+    <div class="layer layer-lower">
+      <div class="layer-header"><span class="icon">&#128230;</span> lowerdir <span class="label label-ro">只读</span><span class="hint">基础镜像层 — 物理上永远不会被修改</span></div>
+      <div class="layer-body" id="lower-panel"></div>
+    </div>
+  </div>
+
+  <div class="actions" id="actions"></div>
+
+  <div class="log">
+    <div class="log-inner" id="log-container">
+      <div class="log-entry" style="color:#64748b">&#9654; 就绪。点击按钮开始交互 &mdash; 观察文件在三层之间的流动。</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ 初始状态 ============
+const initialState = {
+  lower: [
+    { name: "base.txt",     content: "基础镜像层文件",      size: 21 },
+    { name: "config.txt",   content: "debug=false",         size: 11 },
+    { name: "app/",         content: null,                  size: null, isDir: true },
+    { name: "app/main.py",  content: "print('hello')",      size: 15 },
+  ],
+  upper: [],
+  whiteouts: []
+};
+let state = JSON.parse(JSON.stringify(initialState));
+
+function getIcon(n) { return n.endsWith("/") ? "&#128193;" : "&#128196;"; }
+
+function buildMerged() {
+  const r = []; const seen = new Set();
+  for (const f of state.upper) { if (!f._whiteout) { r.push({...f}); seen.add(f.name); } }
+  for (const f of state.lower) { if (!seen.has(f.name) && !state.whiteouts.includes(f.name)) r.push({...f, _fromLower: true}); }
+  return r;
+}
+
+function renderAll(highlightFile = null) {
+  // --- lower 层 ---
+  const lowerView = state.lower.map(f => {
+    const masked = state.whiteouts.includes(f.name);
+    const hasCopy = state.upper.some(u => u.name === f.name && !u._whiteout);
+    return { ...f, _masked: masked, _copiedAnimate: highlightFile === f.name && hasCopy };
+  });
+  document.getElementById("lower-panel").innerHTML = renderFiles(lowerView, "lower");
+
+  // --- upper 层 ---
+  document.getElementById("upper-panel").innerHTML = renderFiles(state.upper, "upper");
+
+  // --- merged 层 ---
+  const mergedView = buildMerged();
+  const mergedMeta = mergedView.map(f => {
+    const isNew = state.upper.some(u => u.name === f.name && !u._fromLower && !u._whiteout);
+    const isMod = state.upper.some(u => u.name === f.name && !u._whiteout && !isNew);
+    return { ...f, _new: highlightFile === f.name && isNew, _modified: highlightFile === f.name && isMod };
+  });
+  document.getElementById("merged-panel").innerHTML = renderFiles(mergedMeta, "merged");
+
+  // COW 动画: 在 lower 层标记被复制的文件
+  if (highlightFile) {
+    setTimeout(() => {
+      const el = document.querySelector(`.layer-lower .file-copied`);
+      if (el) el.classList.add("cow-fly");
+    }, 100);
+  }
+}
+
+function renderFiles(files, layerType) {
+  if (!files.length) return '<div class="empty-hint">(空)</div>';
+  return files.map(f => {
+    let cls = "file-entry";
+    if (f._new) cls += " file-new";
+    if (f._modified) cls += " file-modified";
+    if (f._deleted) cls += " file-deleted";
+    if (f._masked) cls += " file-masked";
+    if (f._copiedAnimate) cls += " file-copied";
+
+    let display = f.name, extra = "";
+    if (f._whiteout) { display = f.whiteoutOf; extra = ' <span class="whiteout">[whiteout — 遮蔽 lower 同名文件]</span>'; }
+    if (f._masked && layerType === "lower") extra = ' <span class="masked-hint">(文件仍在此，被 whiteout 遮蔽)</span>';
+
+    const sz = f.size !== null ? `${f.size}B` : "—";
+    return `<div class="${cls}"><span class="file-icon">${getIcon(f.name)}</span><span class="name">${display}${extra}</span><span class="size">${sz}</span></div>`;
+  }).join("");
+}
+
+// ============ 日志 ============
+function log(msg, cls = "") {
+  const c = document.getElementById("log-container");
+  const d = document.createElement("div");
+  d.className = "log-entry";
+  d.innerHTML = `<span class="ts">[${new Date().toLocaleTimeString()}]</span> <span class="act ${cls}">${msg}</span>`;
+  c.insertBefore(d, c.firstChild);
+}
+
+// ============ 操作 ============
+function readFile(name) {
+  const m = buildMerged();
+  const f = m.find(x => x.name === name);
+  if (!f) return log(`&#128269; ${name} → 不存在`, "delete");
+  log(`&#128269; ${name} → "${f.content}" (来自 ${f._fromLower ? "lower" : "upper"} 层)`, "read");
+}
+
+function modifyFile(name, newContent) {
+  const m = buildMerged(); const exist = m.find(x => x.name === name);
+  if (!exist) return log(`&#10060; ${name} → 不存在`, "delete");
+  if (exist._fromLower) {
+    state.upper.push({ name, content: newContent, size: newContent.length });
+    log(`&#128190; COW! ${name} 从 lower 复制到 upper → 在 upper 修改为 "${newContent}" (lower 原文件不变)`, "write");
+  } else {
+    state.upper.find(x => x.name === name).content = newContent;
+    state.upper.find(x => x.name === name).size = newContent.length;
+    log(`&#9999; ${name} 已在 upper → 直接修改为 "${newContent}"`, "write");
+  }
+  renderAll(name); setTimeout(() => renderAll(), 1500);
+}
+
+function createFile(name, content) {
+  // 如果该文件已被 whiteout 遮蔽 → 移除 whiteout，文件"复活"
+  const wi = state.whiteouts.indexOf(name);
+  if (wi >= 0) {
+    state.whiteouts.splice(wi, 1);
+    const uwi = state.upper.findIndex(x => x._whiteout && x.whiteoutOf === name);
+    if (uwi >= 0) state.upper.splice(uwi, 1);
+    state.upper.push({ name, content, size: content.length });
+    log(`&#10133; 创建 ${name} → 移除 whiteout，新文件写入 upper (文件"复活")`, "write");
+  } else {
+    state.upper.push({ name, content, size: content.length });
+    log(`&#10133; 新建 ${name} → 写入 upper`, "write");
+  }
+  renderAll(name); setTimeout(() => renderAll(), 1200);
+}
+
+function deleteFile(name) {
+  const m = buildMerged(); const exist = m.find(x => x.name === name);
+  if (!exist) return log(`&#10060; ${name} → 不存在`, "delete");
+
+  const inUpper = state.upper.findIndex(x => x.name === name && !x._whiteout);
+  const inLower = state.lower.some(x => x.name === name);
+  const alreadyMasked = state.whiteouts.includes(name);
+
+  // 情况 1: 文件同时存在于 upper (COW 副本) 和 lower → 删除 upper 副本 + 建 whiteout 遮蔽 lower
+  if (inUpper >= 0 && inLower && !alreadyMasked) {
+    state.upper.splice(inUpper, 1);
+    state.whiteouts.push(name);
+    state.upper.push({ name, content: null, size: 0, _whiteout: true, whiteoutOf: name });
+    log(`&#10060; ${name} 删除 upper 副本 + 建 whiteout 遮蔽 lower 原文件 → merged 中彻底消失`, "delete");
+  }
+  // 情况 2: 文件只在 upper (纯新建) → 直接删除
+  else if (inUpper >= 0 && !inLower) {
+    state.upper.splice(inUpper, 1);
+    log(`&#10060; ${name} 是容器新建文件 → 从 upper 直接删除`, "delete");
+  }
+  // 情况 3: 文件只在 lower (从未被修改/删除过) → 建 whiteout
+  else if (inUpper < 0 && inLower && !alreadyMasked) {
+    state.whiteouts.push(name);
+    state.upper.push({ name, content: null, size: 0, _whiteout: true, whiteoutOf: name });
+    log(`&#10060; ${name} 在 lower (只读) → 在 upper 创建 whiteout 遮蔽 (lower 原文件不动)`, "delete");
+  }
+  // 情况 4: 已删除 → 无操作
+  else {
+    log(`&#10060; ${name} 已被删除`, "delete");
+  }
+  renderAll(name); setTimeout(() => renderAll(), 1500);
+}
+
+function reset() {
+  state = JSON.parse(JSON.stringify(initialState));
+  renderAll();
+  document.getElementById("log-container").innerHTML = '<div class="log-entry" style="color:#64748b">&#9654; 已重置。</div>';
+}
+
+renderAll();
+
+// ============ 按钮 ============
+const btns = [
+  ["&#128269; 读取 config.txt", "btn-read",   () => readFile("config.txt")],
+  ["&#128269; 读取 base.txt",   "btn-read",   () => readFile("base.txt")],
+  ["&#9999; 修改 config.txt → debug=true",    "btn-modify", () => modifyFile("config.txt", "debug=true")],
+  ["&#9999; 修改 base.txt",                    "btn-modify", () => modifyFile("base.txt", "容器修改后的 base.txt")],
+  ["&#10133; 新建 runtime.log",                "btn-create", () => createFile("runtime.log", "[2025-06-19] Container started")],
+  ["&#10133; 新建 app/data.json",              "btn-create", () => createFile("app/data.json", '{"version":"1.0"}')],
+  ["&#10060; 删除 config.txt",                 "btn-delete", () => deleteFile("config.txt")],
+  ["&#10060; 删除 app/main.py 后再创建",      "btn-delete", () => {
+    deleteFile("app/main.py");
+    setTimeout(() => createFile("app/main.py", "print('hello v2')"), 1600);
+  }],
+  ["&#8634; 重置",                             "btn-reset",  reset],
+];
+const act = document.getElementById("actions");
+btns.forEach(([l, c, f]) => { const b = document.createElement("button"); b.innerHTML = l; b.className = c; b.onclick = f; act.appendChild(b); });
+</script>
+</body>
+</html>

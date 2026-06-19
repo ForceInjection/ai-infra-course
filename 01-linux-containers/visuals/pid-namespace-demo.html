@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PID Namespace 双视角 — Host vs Container</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; }
+.header { text-align:center; padding:20px 16px 8px; }
+.header h1 { font-size:1.5em; color:#f8fafc; }
+.header p { color:#94a3b8; margin-top:2px; font-size:0.85em; }
+
+.main-wrap { max-width:1100px; margin:0 auto; padding:0 16px 20px; }
+
+/* 双栏 */
+.split { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:16px; }
+
+.zone { background:#1e293b; border-radius:12px; border:3px solid #334155; overflow:hidden; }
+.zone-header { padding:10px 16px; font-weight:700; font-size:0.9em; display:flex; align-items:center; gap:8px; }
+.zone-header .icon { font-size:1.3em; }
+.zone-hint { font-size:0.75em; font-weight:400; color:#94a3b8; margin-left:auto; }
+.zone-body { padding:10px 16px 16px; }
+
+.zone-host  { border-color:#166534; } .zone-host  .zone-header { background:#14532d; }
+.zone-cont  { border-color:#1e40af; } .zone-cont  .zone-header { background:#1e3a8a; }
+
+/* 进程树 */
+.proc-tree { background:#0f172a; border-radius:8px; padding:12px 16px; font-family:"SF Mono","Fira Code",monospace; font-size:0.82em; line-height:1.8; }
+.proc-tree .line { padding:2px 0; border-bottom:1px solid #1e293b; display:flex; align-items:center; }
+.proc-tree .pid { display:inline-block; width:42px; text-align:right; font-weight:700; margin-right:10px; }
+.proc-tree .ppid { display:inline-block; width:42px; text-align:right; color:#64748b; margin-right:10px; font-size:0.9em; }
+.proc-tree .cmd { flex:1; }
+.proc-tree .usr { color:#64748b; font-size:0.85em; margin-right:8px; width:60px; }
+.proc-tree .indent { margin-left:20px; }
+
+.proc-row { transition:all 0.4s; }
+.p-container { color:#60a5fa; }
+.p-normal { color:#e2e8f0; }
+.p-kernel { color:#fbbf24; }
+.p-mapped { animation:mapPulse 2s ease-in-out infinite; }
+
+@keyframes mapPulse {
+  0%,100% { background:transparent; }
+  50% { background:rgba(59,130,246,0.15); }
+}
+
+/* 映射连线区 */
+.mapping-hint { text-align:center; padding:4px 0 12px; color:#64748b; font-size:0.8em; }
+.mapping-hint .arrow { color:#60a5fa; font-weight:700; }
+
+/* 图例 */
+.legend { display:flex; gap:18px; flex-wrap:wrap; font-size:0.75em; color:#94a3b8; padding:0 0 12px; justify-content:center; }
+.legend span { display:flex; align-items:center; gap:4px; }
+.legend .dot { width:10px; height:10px; border-radius:3px; }
+.legend .line { width:16px; height:2px; border-radius:1px; }
+
+/* 按钮 */
+.actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; padding-bottom:12px; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.btn-blue  { background:#1e40af; color:#bfdbfe; }
+.btn-green { background:#15803d; color:#bbf7d0; }
+.btn-red   { background:#b91c1c; color:#fecaca; }
+.btn-gray  { background:#334155; color:#cbd5e1; }
+
+/* 说明 */
+.note { background:#1e293b; border:1px solid #334155; border-radius:8px; padding:10px 16px; font-size:0.78em; color:#94a3b8; margin-top:12px; }
+.note strong { color:#f8fafc; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>&#128065; PID Namespace 双视角</h1>
+  <p>模块 1 — Linux 基础与容器技术入门 &nbsp;|&nbsp; PPT 第 14 页 &nbsp;|&nbsp; Host 视角 vs Container 视角</p>
+</div>
+
+<div class="main-wrap">
+  <div class="legend">
+    <span><span class="dot" style="background:#60a5fa"></span> 容器进程</span>
+    <span><span class="dot" style="background:#e2e8f0"></span> 普通进程</span>
+    <span><span class="dot" style="background:#fbbf24"></span> 内核线程</span>
+    <span><span class="line" style="background:rgba(59,130,246,0.4)"></span> PID 映射</span>
+  </div>
+
+  <div class="split">
+    <!-- Host -->
+    <div class="zone zone-host">
+      <div class="zone-header"><span class="icon">&#128187;</span> Host (宿主机)<span class="zone-hint">能看到所有进程</span></div>
+      <div class="zone-body">
+        <div class="proc-tree" id="host-tree"></div>
+        <div class="note" style="margin-top:10px;background:#0f172a;">
+          <strong>Host 视角</strong>：PID 是全局唯一的。看到所有 namespace 的进程，包括容器内的进程（用真实 PID 显示）。
+        </div>
+      </div>
+    </div>
+
+    <!-- Container -->
+    <div class="zone zone-cont">
+      <div class="zone-header"><span class="icon">&#128230;</span> Container (容器内)<span class="zone-hint">只看自己 namespace</span></div>
+      <div class="zone-body">
+        <div class="proc-tree" id="cont-tree"></div>
+        <div class="note" style="margin-top:10px;background:#0f172a;">
+          <strong>Container 视角</strong>：PID 从 1 开始重新编号。只能看到自己 namespace 内的进程，看不到宿主机其他进程。同 namespace 的进程用容器内 PID 显示。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mapping-hint">
+    <span class="arrow">&#8593; Host PID &#8596; Container PID 映射 &#8593;</span>
+    <br>同一个进程在 Host 和 Container 中有不同的 PID
+  </div>
+
+  <div class="actions">
+    <button class="btn-blue" onclick="startContainer()">&#9654; 启动容器: docker run -it ubuntu bash</button>
+    <button class="btn-green" onclick="spawnProcess()">&#10133; 容器内启动 sleep 进程</button>
+    <button class="btn-green" onclick="spawnNginx()">&#10133; 容器内启动 nginx</button>
+    <button class="btn-red" onclick="killProcess()">&#10060; kill sleep 进程</button>
+    <button class="btn-gray" onclick="reset()">&#8634; 重置</button>
+  </div>
+</div>
+
+<script>
+// ============ 进程数据结构 ============
+// 全局 PID 计数器
+let nextHostPid = 1;
+
+function newHostPid() { return nextHostPid++; }
+
+// 宿主机进程列表
+let hostProcs = [];
+
+// 容器 namespace (null = 未创建)
+let containerNS = null;
+
+// 容器内 PID 映射: hostPid -> contPid
+let pidMap = {};
+
+// ============ 初始化宿主机进程 ============
+function initHost() {
+  nextHostPid = 1;
+  hostProcs = [
+    { pid: newHostPid(), ppid: 0,  cmd: "systemd",            user: "root",   type: "normal" },
+    { pid: newHostPid(), ppid: 1,  cmd: "sshd",               user: "root",   type: "normal" },
+    { pid: newHostPid(), ppid: 1,  cmd: "dockerd",            user: "root",   type: "normal" },
+    { pid: newHostPid(), ppid: 1,  cmd: "containerd",         user: "root",   type: "normal" },
+    { pid: newHostPid(), ppid: 3,  cmd: "sshd: user@pts/0",  user: "user",   type: "normal" },
+    { pid: newHostPid(), ppid: 1,  cmd: "kthreadd",           user: "root",   type: "kernel" },
+    { pid: newHostPid(), ppid: 6,  cmd: "kworker/0:0",        user: "root",   type: "kernel" },
+    { pid: newHostPid(), ppid: 6,  cmd: "migration/0",        user: "root",   type: "kernel" },
+  ];
+  containerNS = null;
+  pidMap = {};
+}
+
+// ============ 获取容器内 PID ============
+function getContPid(hostPid) {
+  if (!containerNS) return null;
+  if (pidMap[hostPid] !== undefined) return pidMap[hostPid];
+  // 新进入 namespace 的进程，分配容器内 PID
+  const contPid = Object.keys(pidMap).length + 1;
+  pidMap[hostPid] = contPid;
+  return contPid;
+}
+
+function getContProcs() {
+  if (!containerNS) return [];
+  return hostProcs
+    .filter(p => pidMap[p.pid] !== undefined)
+    .map(p => ({ ...p, contPid: pidMap[p.pid] }));
+}
+
+// ============ 动作 ============
+function startContainer() {
+  if (containerNS) return;
+  // 创建一个新的 PID namespace（用 runc/containerd-shim 模拟）
+  const shimPid = newHostPid();
+  hostProcs.push({ pid: shimPid, ppid: 4, cmd: "containerd-shim", user: "root", type: "container" });
+
+  const bashPid = newHostPid();
+  hostProcs.push({ pid: bashPid, ppid: shimPid, cmd: "/bin/bash (容器主进程)", user: "root", type: "container" });
+
+  containerNS = { shimPid, bashPid };
+  pidMap = {};
+  getContPid(bashPid);  // PID 1
+
+  render();
+}
+
+function spawnProcess() {
+  if (!containerNS) return;
+  const hostPid = newHostPid();
+  hostProcs.push({ pid: hostPid, ppid: containerNS.bashPid, cmd: "sleep 3600", user: "root", type: "container" });
+  getContPid(hostPid);
+  render();
+}
+
+function spawnNginx() {
+  if (!containerNS) return;
+  // nginx 主进程
+  const masterPid = newHostPid();
+  hostProcs.push({ pid: masterPid, ppid: containerNS.bashPid, cmd: "nginx: master", user: "root", type: "container" });
+  getContPid(masterPid);
+  // nginx worker
+  const workerPid = newHostPid();
+  hostProcs.push({ pid: workerPid, ppid: masterPid, cmd: "nginx: worker", user: "nginx", type: "container" });
+  getContPid(workerPid);
+  render();
+}
+
+function killProcess() {
+  if (!containerNS) return;
+  // 找到最后一个 sleep 进程
+  const sleepIdx = [...hostProcs].reverse().findIndex(p => p.cmd === "sleep 3600");
+  if (sleepIdx < 0) return;
+  const realIdx = hostProcs.length - 1 - sleepIdx;
+  const killedPid = hostProcs[realIdx].pid;
+  hostProcs.splice(realIdx, 1);
+  delete pidMap[killedPid];
+  render();
+}
+
+function reset() {
+  initHost();
+  render();
+}
+
+// ============ 渲染 ============
+function renderProcTree(procs, isContainer, highlightMap) {
+  if (!procs.length) return '<div style="color:#475569;text-align:center;padding:16px;font-size:0.82em">(容器未启动 — 点击「启动容器」)</div>';
+
+  return procs.map(p => {
+    let cls = "proc-row";
+    if (p.type === "container") cls += " p-container";
+    else if (p.type === "kernel") cls += " p-kernel";
+    else cls += " p-normal";
+
+    if (highlightMap && highlightMap[p.pid]) cls += " p-mapped";
+
+    const pad = isContainer ? "" : (p.type === "container" ? " indent" : "");
+    return `<div class="line${pad} ${cls}">
+      <span class="usr">${p.user}</span>
+      <span class="pid" style="color:${isContainer && p.contPid ? '#60a5fa' : p.type === 'kernel' ? '#fbbf24' : '#e2e8f0'}">${isContainer && p.contPid !== undefined ? p.contPid : p.pid}</span>
+      <span class="ppid">${isContainer ? (p.contPid ? (p.ppid === containerNS?.bashPid ? 1 : '—') : '—') : p.ppid}</span>
+      <span class="cmd">${p.cmd}</span>
+    </div>`;
+  }).join("");
+}
+
+function render() {
+  // Host 视角：全部进程
+  document.getElementById("host-tree").innerHTML = renderProcTree(hostProcs, false);
+
+  // Container 视角：只有 container namespace 内的进程
+  const contProcs = getContProcs();
+  const highlightMap = {};
+  if (containerNS) {
+    Object.keys(pidMap).forEach(hpid => highlightMap[parseInt(hpid)] = true);
+  }
+  document.getElementById("cont-tree").innerHTML = contProcs.length
+    ? renderProcTree(contProcs, true, highlightMap)
+    : '<div style="color:#475569;text-align:center;padding:16px;font-size:0.82em">(容器未启动 — 点击「启动容器」)</div>';
+}
+
+// ============ 启动 ============
+initHost();
+render();
+</script>
+</body>
+</html>

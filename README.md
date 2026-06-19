@@ -39,6 +39,12 @@ ai-infra-course/
 │   │   ├── 02_cgroup_demo.sh
 │   │   ├── 03_overlayfs_demo.sh
 │   │   └── 04_docker_layer_demo.sh
+│   ├── README.md                    #   模块说明
+│   ├── visuals/                     #   可视化 HTML (4个)
+│   │   ├── overlayfs-demo.html      #     OverlayFS + COW
+│   │   ├── pid-namespace-demo.html  #     PID Namespace 双视角
+│   │   ├── docker-run-gpus-all.html #     docker run 全链路
+│   │   └── containerd-architecture.html # containerd 架构
 │   ├── hands-on-exercise.md         #   课堂动手题
 │   ├── homework.md                  #   课后练习
 │   ├── lab-environment.md           #   实验环境说明
@@ -53,6 +59,11 @@ ai-infra-course/
 │   │   ├── 02_matmul_naive.cu
 │   │   ├── 03_matmul_tiled.cu
 │   │   └── 04_device_query.cu
+│   ├── visuals/                     #   可视化 HTML (4个)
+│   │   ├── gpu-architecture.html    #     GPU 逻辑架构全景
+│   │   ├── cuda-thread-hierarchy.html #   Grid→Block→Warp→Thread
+│   │   ├── shared-memory-tiling.html  #   Shared Memory Tiling
+│   │   └── thread-index-mapping.html  #   线程索引映射 (1D/2D/3D)
 │   ├── hands-on-exercise.md
 │   ├── homework.md
 │   ├── lab-environment.md
@@ -71,6 +82,7 @@ ai-infra-course/
 | 文件                   | 说明                                        | 是否提交 |
 | ---------------------- | ------------------------------------------- | -------- |
 | `code/`                | 配套代码和脚本，含 README                   | ✔        |
+| `visuals/`             | 可视化 HTML，课堂演示用                     | ✔        |
 | `hands-on-exercise.md` | 课堂动手题：题目、步骤、讲解要点            | ✔        |
 | `homework.md`          | 课后练习：题目、要求、评分标准              | ✔        |
 | `lab-environment.md`   | 实验环境说明：硬件/软件要求、搭建步骤       | ✔        |

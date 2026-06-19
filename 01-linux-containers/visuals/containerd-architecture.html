@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>containerd 架构可视化</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:16px 16px 6px; flex-shrink:0; }
+.header h1 { font-size:1.4em; color:#f8fafc; }
+.header p { color:#94a3b8; margin-top:2px; font-size:0.8em; }
+
+.main-wrap { max-width:1100px; width:100%; margin:0 auto; padding:0 16px 12px; display:flex; gap:20px; flex:1; min-height:0; }
+.main-left { flex:1; min-width:0; overflow-y:auto; }
+.main-right { width:370px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { flex:1; overflow-y:auto; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:14px 16px; margin-bottom:10px; }
+
+.legend { display:flex; gap:14px; flex-wrap:wrap; font-size:0.7em; color:#64748b; padding-bottom:10px; justify-content:center; }
+.legend .dot { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:3px; }
+
+/* 架构图层 */
+.layers { display:flex; flex-direction:column; gap:0; }
+.layer-box { border:1px solid #1e293b; border-radius:12px; padding:12px 16px; }
+.layer-box.upstream { border-color:#1e3a8a; }
+.layer-box.ctrd { border-color:#f97316; }
+.layer-box.downstream { border-color:#6b21a8; }
+.layer-label { font-size:0.7em; color:#64748b; padding:4px 0 4px 8px; text-transform:uppercase; letter-spacing:1px; border-bottom:1px dashed #1e293b; }
+
+.arch { position:relative; padding:8px 0 8px; }
+.row { display:flex; align-items:center; justify-content:center; gap:10px; margin:0; flex-wrap:wrap; }
+.row-title { font-size:0.72em; color:#94a3b8; text-align:center; padding:4px 0; }
+
+/* 组件方块 */
+.comp { display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:10px; padding:10px 14px; min-width:90px; cursor:pointer; transition:all 0.2s; border:2px solid transparent; text-align:center; }
+.comp:hover { filter:brightness(1.15); transform:scale(1.03); }
+.comp.active { border-color:#fbbf24; box-shadow:0 0 12px rgba(251,191,36,0.3); }
+.comp .name { font-weight:700; font-size:0.82em; line-height:1.3; }
+.comp .sub  { font-size:0.65em; color:rgba(255,255,255,0.5); margin-top:1px; }
+
+/* 颜色 */
+.c-up    { background:#1e3a8a; }
+.c-api   { background:#0f766e; }
+.c-core  { background:#7c2d12; }
+.c-snap  { background:#b45309; }
+.c-store { background:#854d0e; }
+.c-shim  { background:#6b21a8; }
+.c-runc  { background:#9a3412; }
+.c-cont  { background:#1e40af; }
+
+/* 箭头 */
+.arrows { display:flex; flex-direction:column; align-items:center; }
+.arrow-vert { display:flex; flex-direction:column; align-items:center; }
+.arrow-line { width:2px; height:14px; background:#475569; }
+.arrow-head { width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid #475569; }
+.arrow-label { font-size:0.6em; color:#64748b; white-space:nowrap; padding:2px 0; font-family:"SF Mono","Fira Code",monospace; }
+.arrow-horiz { display:flex; align-items:center; gap:0; }
+.arrow-h-line { width:30px; height:2px; background:#475569; }
+.arrow-h-head { width:0; height:0; border-top:4px solid transparent; border-bottom:4px solid transparent; border-left:5px solid #475569; }
+.arrow-h-label { font-size:0.58em; color:#64748b; padding:0 4px; font-family:"SF Mono","Fira Code",monospace; white-space:nowrap; }
+
+/* 分组框 */
+.group-box { border:1px dashed #334155; border-radius:8px; padding:8px 12px; }
+.group-label { font-size:0.65em; color:#64748b; margin-bottom:6px; text-align:center; }
+
+/* 详情面板 */
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.8em; display:block; padding:3px 0; line-height:1.6; }
+.detail-panel .comment { color:#64748b; }
+.detail-panel .highlight { color:#fbbf24; }
+
+/* 按钮 */
+.actions { display:flex; gap:6px; padding-top:12px; flex-wrap:wrap; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.actions button:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-play { background:#15803d; color:#bbf7d0; }
+.btn-reset{ background:#334155; color:#cbd5e1; }
+
+.detail-panel .note { color:#94a3b8; font-size:0.82em; line-height:1.6; }
+.detail-panel .note strong { color:#f8fafc; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>&#128230; containerd — 容器运行时架构</h1>
+  <p>模块 1 — Linux 基础与容器技术入门 &nbsp;|&nbsp; 点击组件查看详情</p>
+</div>
+
+<div class="main-wrap">
+  <div class="main-left">
+    <div class="legend">
+      <span><span class="dot" style="background:#1e3a8a"></span>上游 (dockerd/kubelet)</span>
+      <span><span class="dot" style="background:#f97316"></span>containerd 核心</span>
+      <span><span class="dot" style="background:#6b21a8"></span>下游 (shim/runc/容器)</span>
+    </div>
+
+    <div class="layers">
+
+    <!-- 上游 -->
+    <div class="layer-box upstream">
+      <div class="layer-label">上游 — 通过 gRPC 调用 containerd</div>
+      <div class="arch">
+        <div class="row">
+          <div class="comp c-up" id="comp-dockerd" onclick="select('dockerd')">
+            <div class="name">dockerd</div>
+            <div class="sub">Docker Engine</div>
+          </div>
+          <div class="comp c-up" id="comp-kubelet" onclick="select('kubelet')">
+            <div class="name">kubelet</div>
+            <div class="sub">Kubernetes</div>
+          </div>
+          <div class="comp c-up" id="comp-crictl" onclick="select('crictl')">
+            <div class="name">crictl</div>
+            <div class="sub">调试工具</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrows">
+      <div class="arrow-vert"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="arrow-label">gRPC API</div>
+      <div class="arrow-vert"><div class="arrow-line"></div></div>
+    </div>
+
+    <!-- containerd 内部 -->
+    <div class="layer-box ctrd">
+      <div class="layer-label">containerd 核心</div>
+      <div class="arch">
+
+        <!-- gRPC API 层 -->
+        <div class="row-title">gRPC API 层</div>
+        <div class="row" style="gap:8px">
+          <div class="comp c-api" style="min-width:80px;padding:6px 10px" id="comp-api-img" onclick="select('api-img')">
+            <div class="name">Image</div>
+            <div class="sub">镜像管理</div>
+          </div>
+          <div class="comp c-api" style="min-width:80px;padding:6px 10px" id="comp-api-ctr" onclick="select('api-ctr')">
+            <div class="name">Container</div>
+            <div class="sub">容器管理</div>
+          </div>
+          <div class="comp c-api" style="min-width:80px;padding:6px 10px" id="comp-api-task" onclick="select('api-task')">
+            <div class="name">Task</div>
+            <div class="sub">进程管理</div>
+          </div>
+          <div class="comp c-api" style="min-width:80px;padding:6px 10px" id="comp-api-ev" onclick="select('api-ev')">
+            <div class="name">Events</div>
+            <div class="sub">事件订阅</div>
+          </div>
+        </div>
+
+        <div class="arrows" style="padding:4px 0">
+          <div class="arrow-vert"><div class="arrow-line" style="height:8px"></div><div class="arrow-head"></div></div>
+        </div>
+
+        <!-- 核心服务 -->
+        <div class="row-title">核心子系统</div>
+        <div class="row" style="gap:12px">
+          <div class="group-box">
+            <div class="group-label">Content Store</div>
+            <div class="comp c-store" style="min-width:70px;padding:6px 10px" id="comp-content" onclick="select('content')">
+              <div class="name">content</div>
+              <div class="sub">镜像层数据</div>
+            </div>
+          </div>
+          <div class="group-box">
+            <div class="group-label">Metadata Store</div>
+            <div class="comp c-core" style="min-width:70px;padding:6px 10px" id="comp-meta" onclick="select('meta')">
+              <div class="name">metadata</div>
+              <div class="sub">boltDB</div>
+            </div>
+          </div>
+          <div class="group-box">
+            <div class="group-label">Snapshotter</div>
+            <div class="comp c-snap" style="min-width:70px;padding:6px 10px" id="comp-snap" onclick="select('snap')">
+              <div class="name">snapshot</div>
+              <div class="sub">overlayfs / devmapper</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrows">
+      <div class="arrow-vert"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="arrow-label">fork + exec</div>
+      <div class="arrow-vert"><div class="arrow-line"></div></div>
+    </div>
+
+    <!-- 下游 -->
+    <div class="layer-box downstream">
+      <div class="layer-label">下游 — 每个容器对应一个 shim + 一个 runc 实例</div>
+      <div class="arch">
+        <div class="row" style="gap:20px">
+          <div class="group-box" style="flex:1;max-width:280px">
+            <div class="group-label">容器 A</div>
+            <div class="row" style="flex-direction:column;gap:4px">
+              <div class="comp c-shim" style="width:100%" id="comp-shim-a" onclick="select('shim')">
+                <div class="name">containerd-shim</div>
+                <div class="sub">托管容器进程生命周期</div>
+              </div>
+              <div class="arrow-horiz" style="padding:2px 0">
+                <div class="arrow-h-label">OCI exec</div>
+                <div class="arrow-h-line" style="width:20px"></div>
+                <div class="arrow-h-head"></div>
+              </div>
+              <div class="comp c-runc" style="width:100%" id="comp-runc-a" onclick="select('runc')">
+                <div class="name">runc</div>
+                <div class="sub">创建 namespace + cgroup</div>
+              </div>
+              <div class="arrow-horiz" style="padding:2px 0">
+                <div class="arrow-h-label">启动</div>
+                <div class="arrow-h-line" style="width:20px"></div>
+                <div class="arrow-h-head"></div>
+              </div>
+              <div class="comp c-cont" style="width:100%" id="comp-cont-a" onclick="select('container')">
+                <div class="name">容器进程</div>
+                <div class="sub">nginx: master</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="group-box" style="flex:1;max-width:280px">
+            <div class="group-label">容器 B</div>
+            <div class="row" style="flex-direction:column;gap:4px">
+              <div class="comp c-shim" style="width:100%;opacity:0.7" id="comp-shim-b" onclick="select('shim')">
+                <div class="name">containerd-shim</div>
+                <div class="sub">托管容器进程生命周期</div>
+              </div>
+              <div class="arrow-horiz" style="padding:2px 0">
+                <div class="arrow-h-label">OCI exec</div>
+                <div class="arrow-h-line" style="width:20px"></div>
+                <div class="arrow-h-head"></div>
+              </div>
+              <div class="comp c-runc" style="width:100%;opacity:0.7" id="comp-runc-b" onclick="select('runc')">
+                <div class="name">runc</div>
+                <div class="sub">创建 namespace + cgroup</div>
+              </div>
+              <div class="arrow-horiz" style="padding:2px 0">
+                <div class="arrow-h-label">启动</div>
+                <div class="arrow-h-line" style="width:20px"></div>
+                <div class="arrow-h-head"></div>
+              </div>
+              <div class="comp c-cont" style="width:100%;opacity:0.7" id="comp-cont-b" onclick="select('container')">
+                <div class="name">容器进程</div>
+                <div class="sub">redis-server</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="group-box" style="flex:1;max-width:280px">
+            <div class="group-label">容器 C</div>
+            <div class="row" style="flex-direction:column;gap:4px">
+              <div class="comp c-shim" style="width:100%;opacity:0.5" id="comp-shim-c" onclick="select('shim')">
+                <div class="name">containerd-shim</div>
+                <div class="sub">托管容器进程生命周期</div>
+              </div>
+              <div class="arrow-horiz" style="padding:2px 0">
+                <div class="arrow-h-label">OCI exec</div>
+                <div class="arrow-h-line" style="width:20px"></div>
+                <div class="arrow-h-head"></div>
+              </div>
+              <div class="comp c-runc" style="width:100%;opacity:0.5" id="comp-runc-c" onclick="select('runc')">
+                <div class="name">runc</div>
+                <div class="sub">创建 namespace + cgroup</div>
+              </div>
+              <div class="arrow-horiz" style="padding:2px 0">
+                <div class="arrow-h-label">启动</div>
+                <div class="arrow-h-line" style="width:20px"></div>
+                <div class="arrow-h-head"></div>
+              </div>
+              <div class="comp c-cont" style="width:100%;opacity:0.5" id="comp-cont-c" onclick="select('container')">
+                <div class="name">容器进程</div>
+                <div class="sub">python app.py</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    </div><!-- /layers -->
+
+    <!-- ===== 与 Docker 早期架构对比 ===== -->
+    <div style="margin-top:20px;padding-top:16px;border-top:1px dashed #334155">
+      <div class="row-title" style="font-size:0.82em;color:#f8fafc;padding-bottom:10px">containerd 架构 vs Docker 早期架构 — 为什么这样拆分？</div>
+      <div class="row" style="gap:20px;align-items:flex-start">
+        <!-- Docker 早期 -->
+        <div class="group-box" style="flex:1;min-width:240px;border-color:#ef4444;opacity:0.8" id="comp-old-docker" onclick="select('old-docker')">
+          <div class="group-label" style="color:#ef4444">Docker 早期 (v1.11 之前) — 单体架构</div>
+          <div class="row" style="flex-direction:column;gap:4px">
+            <div class="comp" style="width:100%;background:#7f1d1d;cursor:pointer">
+              <div class="name">dockerd (单体)</div>
+              <div class="sub">镜像 + 容器 + 网络 + 日志...</div>
+            </div>
+            <div class="arrow-horiz" style="padding:2px 0">
+              <div class="arrow-h-label">直接管理</div>
+              <div class="arrow-h-line" style="width:20px"></div>
+              <div class="arrow-h-head"></div>
+            </div>
+            <div class="comp" style="width:100%;background:#7f1d1d;opacity:0.7">
+              <div class="name">容器进程</div>
+              <div class="sub">父进程 = dockerd</div>
+            </div>
+          </div>
+          <div style="font-size:0.62em;color:#fca5a5;margin-top:6px;text-align:left;line-height:1.5">
+            &#10060; dockerd 重启 → 所有容器被杀<br>
+            &#10060; 只能通过 Docker API 调用<br>
+            &#10060; K8s 需要 dockershim 适配层
+          </div>
+        </div>
+
+        <!-- 现代 containerd -->
+        <div class="group-box" style="flex:1;min-width:240px;border-color:#22c55e" id="comp-new-ctrd" onclick="select('new-ctrd')">
+          <div class="group-label" style="color:#22c55e">现代架构 (containerd) — 分层解耦</div>
+          <div class="row" style="flex-direction:column;gap:4px">
+            <div class="comp" style="width:100%;background:#166534;cursor:pointer">
+              <div class="name">dockerd / kubelet</div>
+              <div class="sub">上层入口 (可独立重启)</div>
+            </div>
+            <div class="arrow-horiz" style="padding:2px 0">
+              <div class="arrow-h-label">gRPC</div>
+              <div class="arrow-h-line" style="width:20px"></div>
+              <div class="arrow-h-head"></div>
+            </div>
+            <div class="comp" style="width:100%;background:#166534;cursor:pointer">
+              <div class="name">containerd</div>
+              <div class="sub">标准容器运行时</div>
+            </div>
+            <div class="arrow-horiz" style="padding:2px 0">
+              <div class="arrow-h-label">fork</div>
+              <div class="arrow-h-line" style="width:20px"></div>
+              <div class="arrow-h-head"></div>
+            </div>
+            <div class="comp" style="width:100%;background:#166534;opacity:0.7;cursor:pointer">
+              <div class="name">shim → 容器进程</div>
+              <div class="sub">父进程 = shim (dockerd 重启不影响)</div>
+            </div>
+          </div>
+          <div style="font-size:0.62em;color:#86efac;margin-top:6px;text-align:left;line-height:1.5">
+            &#10004; dockerd/kubelet 重启 → 容器不受影响<br>
+            &#10004; 标准化 gRPC API，多调用方<br>
+            &#10004; K8s 直接通过 CRI 对接，无需 dockerd
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-left -->
+
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        &#128161; <strong>containerd 是什么？</strong><br><br>
+        containerd 是业界标准的容器运行时，负责管理容器的完整生命周期。<br><br>
+        <strong>上游</strong>：dockerd、kubelet 等通过 gRPC API 调用 containerd 创建容器<br>
+        <strong>核心</strong>：镜像管理 + 容器元数据 + 文件系统快照<br>
+        <strong>下游</strong>：为每个容器 fork 独立的 containerd-shim → runc → 容器进程<br><br>
+        点击组件查看详细说明。
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-play" id="btn-play" onclick="playAll()">&#9654; 自动演示</button>
+      <button class="btn-reset" onclick="resetAll()">&#8634; 重置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const details = {
+  dockerd: `<code><span class="highlight">dockerd</span> — Docker Engine
+<span class="comment">// Docker 的上层入口，处理 CLI 请求</span>
+<span class="comment">// 通过 containerd 的 gRPC API 创建容器</span>
+<span class="comment">// 自己不再直接管理容器进程</span>
+
+<span class="highlight">调用链</span>:
+  docker CLI → dockerd → containerd (gRPC)
+
+<span class="highlight">关键事实</span>:
+  - dockerd 重启不影响运行中的容器
+  - 容器进程的父进程是 containerd-shim，不是 dockerd
+  - dockerd 可以升级/重启而容器零中断</code>`,
+
+  kubelet: `<code><span class="highlight">kubelet</span> — Kubernetes 节点代理
+<span class="comment">// K8s 在每个节点上运行的代理</span>
+<span class="comment">// 通过 CRI (Container Runtime Interface) 调用 containerd</span>
+
+<span class="highlight">CRI 插件</span>:
+  containerd 内置 CRI 插件，直接处理 kubelet 请求
+  kubelet → CRI gRPC → containerd
+
+<span class="highlight">与 dockerd 的区别</span>:
+  - K8s 环境不再需要 dockerd (1.24+ 移除 dockershim)
+  - kubelet 直接通过 CRI 与 containerd 通信</code>`,
+
+  crictl: `<code><span class="highlight">crictl</span> — CRI 命令行调试工具
+<span class="comment">// 类似于 docker CLI，但直接通过 CRI 与 containerd 通信</span>
+
+<span class="highlight">常用命令</span>:
+  crictl ps           → 列出容器
+  crictl images       → 列出镜像
+  crictl pods         → 列出 Pod (sandbox)
+  crictl inspect <id> → 查看容器详情
+  crictl logs <id>    → 查看容器日志</code>`,
+
+  'api-img': `<code><span class="highlight">Image Service</span> — 镜像管理 API
+<span class="comment">// 管理容器镜像的拉取、存储、查询</span>
+
+<span class="highlight">主要操作</span>:
+  Pull    — 从 Registry 拉取镜像
+  List    — 列出本地镜像
+  Delete  — 删除镜像
+  Status  — 查看镜像存储状态
+
+<span class="highlight">数据流</span>:
+  Registry → Pull → Content Store (存储层数据)
+                   → Metadata Store (镜像名/标签)</code>`,
+
+  'api-ctr': `<code><span class="highlight">Container Service</span> — 容器管理 API
+<span class="comment">// 管理容器的创建、查询、删除</span>
+<span class="comment">// 注意: 创建容器 ≠ 启动容器</span>
+
+<span class="highlight">主要操作</span>:
+  Create  — 创建容器 (准备好 rootfs + spec)
+  Start   — 启动容器 (调用 Task API)
+  List    — 列出容器
+  Delete  — 删除容器
+
+<span class="highlight">生命周期</span>:
+  Create → Start → (运行中) → Delete</code>`,
+
+  'api-task': `<code><span class="highlight">Task Service</span> — 进程管理 API
+<span class="comment">// 管理容器内的进程 (启动、暂停、恢复、杀死)</span>
+
+<span class="highlight">主要操作</span>:
+  Start   — 启动容器进程 → fork containerd-shim
+  Pause   — 暂停 (SIGSTOP)
+  Resume  — 恢复 (SIGCONT)
+  Kill    — 发送信号 (SIGTERM/SIGKILL)
+  Wait    — 等待进程退出
+  Exec    — 在容器中执行新命令 (docker exec)
+
+<span class="highlight">关键</span>: Task API 是真正"启动"容器的入口
+  Container.Create → Task.Start → shim → runc → 容器进程</code>`,
+
+  'api-ev': `<code><span class="highlight">Events Service</span> — 事件订阅 API
+<span class="comment">// 上游通过订阅事件了解容器状态变化</span>
+
+<span class="highlight">事件类型</span>:
+  ContainerCreate / ContainerDelete
+  TaskStart / TaskExit / TaskOOM
+  ImageCreate / ImageDelete
+  SnapshotPrepare / SnapshotCommit
+
+<span class="highlight">用途</span>:
+  - dockerd/kubelet 监听容器退出事件
+  - 触发重启策略 (restart policy)
+  - 更新容器状态缓存</code>`,
+
+  content: `<code><span class="highlight">Content Store</span> — 镜像层数据存储
+<span class="comment">// 存储镜像每一层的内容 (按 sha256 寻址)</span>
+
+<span class="highlight">存储结构</span>:
+  /var/lib/containerd/io.containerd.content.v1.content/
+    └── blobs/
+        └── sha256/
+            ├── abc123... ← 镜像层 1 的实际数据
+            ├── def456... ← 镜像层 2 的实际数据
+            └── ...
+
+<span class="highlight">特点</span>:
+  - 内容寻址 (Content-Addressable): 文件名 = 内容的 sha256
+  - 去重: 相同内容的层只存一份
+  - 多个镜像可以共享相同的层数据</code>`,
+
+  meta: `<code><span class="highlight">Metadata Store</span> — 容器/镜像元数据
+<span class="comment">// 基于 boltDB 的嵌入式键值数据库</span>
+
+<span class="highlight">存储内容</span>:
+  - 容器元数据: ID, 名称, Spec, 状态, 创建时间
+  - 镜像元数据: 名称, 标签, 关联的层
+  - 快照元数据: 父子关系, 挂载信息
+
+<span class="highlight">存储位置</span>:
+  /var/lib/containerd/io.containerd.metadata.v1.bolt/
+    └── meta.db  ← boltDB 单文件
+
+<span class="highlight">特点</span>:
+  - 轻量级: 单文件数据库，无需独立进程
+  - 事务性: ACID 保证元数据一致性
+  - containerd 重启后恢复所有容器状态</code>`,
+
+  snap: `<code><span class="highlight">Snapshotter</span> — 容器文件系统
+<span class="comment">// 管理容器的分层文件系统 (类似 Docker 的存储驱动)</span>
+
+<span class="highlight">工作原理</span>:
+  1. Prepare   — 为容器准备一个可写层 (基于父快照)
+  2. Mount     — 将快照挂载为容器的 rootfs
+  3. Commit    — 将容器修改保存为新快照 (docker commit)
+
+<span class="highlight">常用实现</span>:
+  overlayfs  — 默认，基于 OverlayFS (推荐)
+  devmapper  — 基于 Device Mapper (企业级)
+  native     — 基于 bind mount + rsync (简单)
+
+<span class="highlight">快照关系图</span>:
+  ubuntu:22.04 (基础层, 只读)
+    └── layer-1 (RUN apt update, 只读)
+         └── layer-2 (RUN apt install, 只读)
+              └── container-1 (容器的可写层)</code>`,
+
+  shim: `<code><span class="highlight">containerd-shim</span> — 容器进程守护
+<span class="comment">// 每个容器都有一个独立的 shim 进程</span>
+<span class="comment">// 这是 containerd 架构中最巧妙的设计</span>
+
+<span class="highlight">为什么需要 shim?</span>
+  1. 解耦: dockerd/containerd 重启不影响容器
+     → shim 是容器进程的父进程，始终保持运行
+  2. IO: 收集容器的 stdout/stderr
+     → 转发给 containerd (最终到 docker logs)
+  3. 退出报告: 容器退出时通知 containerd
+     → containerd 不需要 waitpid 阻塞等待
+
+<span class="highlight">进程树</span>:
+  containerd (PID 1000)
+    ├── containerd-shim (PID 1001, 容器 A)
+    │     └── runc init → nginx (PID 1002, 容器内 PID 1)
+    ├── containerd-shim (PID 1003, 容器 B)
+    │     └── runc init → redis (PID 1004, 容器内 PID 1)
+    └── containerd-shim (PID 1005, 容器 C)
+          └── runc init → python (PID 1006, 容器内 PID 1)</code>`,
+
+  runc: `<code><span class="highlight">runc</span> — OCI 标准容器运行时
+<span class="comment">// containerd-shim 调用 runc 来创建和启动容器</span>
+
+<span class="highlight">runc create</span>:
+  1. 读取 OCI spec (config.json)
+  2. unshare → 创建 Namespace (PID, Mount, Network, UTS)
+  3. 创建 cgroup → 设置资源限制
+  4. 挂载 rootfs → OverlayFS / 快照挂载
+  5. 执行 hooks → prestart / poststart / poststop
+
+<span class="highlight">runc start</span>:
+  6. exec 用户指定的命令 (如 nginx)
+
+<span class="highlight">runc 不是常驻进程</span>:
+  - runc create 完成后退出
+  - runc start 完成后退出
+  - 容器进程由 shim 托管，runc 不保持运行</code>`,
+
+  container: `<code><span class="highlight">容器进程</span> — 最终运行的应用
+<span class="comment">// containerd 调用链的终点</span>
+
+<span class="highlight">容器内视角</span>:
+  PID 1: nginx (或其他用户指定的命令)
+  独立的文件系统: / 指向 OverlayFS merged
+  独立的网络栈: 自己的 IP、路由表
+  资源受 cgroup 限制
+
+<span class="highlight">宿主机视角</span>:
+  普通 Linux 进程，但有独立的 namespace 和 cgroup
+  父进程是 containerd-shim (不是 runc)
+
+<span class="highlight">关键</span>:
+  容器的 PID 1 进程退出 → 容器退出
+  容器退出 → shim 通知 containerd → containerd 通知上游</code>`,
+
+  'old-docker': `<code><span class="highlight">Docker 早期架构 (v1.11 之前)</span> — 单体 daemon
+<span class="comment">// 2013-2016: dockerd 是一个巨大的单体进程</span>
+<span class="comment">// 所有功能都在一个二进制里</span>
+
+<span class="highlight">dockerd 自己负责</span>:
+  - 镜像拉取/存储
+  - 容器创建/启动/停止
+  - 网络管理 (bridge/overlay)
+  - 卷管理
+  - 日志收集
+  - 与 Registry 通信
+
+<span class="highlight">核心问题 — dockerd 是容器的父进程</span>:
+  dockerd 重启 → 所有子进程被 kill → 全部容器停止
+  升级 Docker → 必须停掉所有容器
+
+<span class="highlight">K8s 兼容性问题</span>:
+  K8s 需要 dockershim 适配层来调用 Docker API
+  多了一层转发，性能和稳定性都有损耗
+  K8s 1.24 正式移除了 dockershim</code>`,
+
+  'new-ctrd': `<code><span class="highlight">现代架构 (containerd)</span> — 分层解耦
+<span class="comment">// 2017+: Docker 将容器运行时拆分为 containerd</span>
+<span class="comment">// 遵循 OCI 标准，职责清晰分离</span>
+
+<span class="highlight">核心改进 1 — shim 解耦</span>:
+  容器进程的父进程是 containerd-shim，不是 dockerd
+  → dockerd 重启/升级: 容器不受影响，零中断
+
+<span class="highlight">核心改进 2 — 标准化 gRPC API</span>:
+  containerd 暴露标准 gRPC 接口
+  → dockerd、kubelet、crictl 都能直接调用
+  → 不再锁定在 Docker 生态
+
+<span class="highlight">核心改进 3 — K8s 原生对接</span>:
+  containerd 内置 CRI 插件
+  → kubelet 直接通过 CRI 与 containerd 通信
+  → 不再需要 dockerd 和 dockershim
+  → K8s 1.24+ 默认容器运行时
+
+<span class="highlight">架构对比总结</span>:
+  旧: dockerd (单体) → 容器进程 (dockerd 是父进程)
+  新: dockerd/kubelet → containerd → shim → 容器进程
+        (上游可独立重启)   (标准 API)  (容器零中断)</code>`,
+};
+
+const playOrder = ["dockerd","kubelet","crictl","api-img","api-ctr","api-task","api-ev","content","meta","snap","shim","runc","container","old-docker","new-ctrd"];
+let activeId = null;
+let playIndex = -1;
+let playing = false;
+
+function select(id, scroll = true) {
+  document.querySelectorAll(".comp.active").forEach(el => el.classList.remove("active"));
+  activeId = id;
+  // 可能多个组件共用同一个详情 (如 shim-a, shim-b, shim-c 都用 "shim")
+  const allComps = document.querySelectorAll(`[id^="comp-"][onclick*="'${id}'"]`);
+  const el = document.getElementById("comp-" + id);
+  if (el) el.classList.add("active");
+  allComps.forEach(c => c.classList.add("active"));
+  if (el && scroll) el.scrollIntoView({ behavior:"smooth", block:"center" });
+  const panel = document.getElementById("detail-panel");
+  if (details[id]) panel.innerHTML = details[id];
+}
+
+function resetAll() {
+  document.querySelectorAll(".comp.active").forEach(el => el.classList.remove("active"));
+  activeId = null;
+  playIndex = -1;
+  document.getElementById("detail-panel").innerHTML =
+    `<div class="note">
+      &#128161; <strong>containerd 是什么？</strong><br><br>
+      containerd 是业界标准的容器运行时，负责管理容器的完整生命周期。<br><br>
+      <strong>上游</strong>：dockerd、kubelet 等通过 gRPC API 调用 containerd 创建容器<br>
+      <strong>核心</strong>：镜像管理 + 容器元数据 + 文件系统快照<br>
+      <strong>下游</strong>：为每个容器 fork 独立的 containerd-shim → runc → 容器进程<br><br>
+      点击组件查看详细说明。
+    </div>`;
+}
+
+async function playAll() {
+  if (playing) return;
+  playing = true;
+  document.getElementById("btn-play").disabled = true;
+  resetAll();
+  playIndex = -1;
+  for (const id of playOrder) {
+    await new Promise(r => setTimeout(r, 800));
+    playIndex++;
+    select(id, true);
+  }
+  playing = false;
+  document.getElementById("btn-play").disabled = false;
+}
+</script>
+</body>
+</html>

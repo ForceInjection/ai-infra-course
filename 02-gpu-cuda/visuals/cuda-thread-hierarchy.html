@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUDA 线程层次 — Grid → Block → Warp → Thread</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:14px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.4em; color:#f8fafc; }
+.header p { color:#94a3b8; margin-top:2px; font-size:0.8em; }
+
+.main-wrap { max-width:1200px; width:100%; margin:0 auto; padding:0 16px 10px; display:flex; gap:20px; flex:1; min-height:0; }
+.main-left { flex:1; min-width:0; overflow-y:auto; display:flex; align-items:center; justify-content:center; }
+.main-right { width:370px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { flex:1; overflow-y:auto; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:14px 16px; margin-bottom:10px; }
+
+.detail-panel .note { color:#94a3b8; font-size:0.82em; line-height:1.6; }
+.detail-panel .note strong { color:#f8fafc; }
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.78em; display:block; padding:2px 0; line-height:1.6; }
+.detail-panel .comment { color:#64748b; }
+.detail-panel .highlight { color:#fbbf24; }
+
+.actions { display:flex; gap:6px; padding-top:10px; flex-wrap:wrap; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; transition:all 0.15s; background:#334155; color:#cbd5e1; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.actions button.active-btn { background:#1e40af; color:#bfdbfe; }
+.actions button:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-play { background:#15803d !important; color:#bbf7d0 !important; }
+.btn-reset{ background:#334155; color:#cbd5e1; }
+
+svg { max-width:100%; max-height:100%; }
+text.title { font-weight:700; fill:#f8fafc; }
+text.sub { font-size:10px; fill:#94a3b8; }
+
+.clickable { cursor:pointer; transition:all 0.15s; }
+.clickable:hover { filter:brightness(1.2); }
+
+.legend-row { display:flex; gap:14px; flex-wrap:wrap; font-size:0.7em; color:#64748b; justify-content:center; padding:0 0 8px; }
+.legend-dot { width:10px; height:10px; border-radius:2px; display:inline-block; margin-right:3px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>&#127760; CUDA 线程层次 — Grid → Block → Warp → Thread</h1>
+  <p>模块 2 — GPU 硬件架构与 CUDA 编程入门 &nbsp;|&nbsp; PPT 第 20-21 页 &nbsp;|&nbsp; 点击层级标签切换视图</p>
+</div>
+
+<div class="main-wrap">
+  <div class="main-left">
+    <svg id="main-svg" viewBox="0 0 800 660"></svg>
+  </div>
+
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        &#128161; <strong>CUDA 线程层次</strong><br><br>
+        点击左侧层级标签切换视图:<br><br>
+        <strong>Grid</strong> → 整个 kernel，分布在多个 SM 上<br>
+        <strong>Block</strong> → 在一个 SM 上执行，共享 Shared Memory<br>
+        <strong>Warp</strong> → 32 线程锁步执行 (SIMT)<br>
+        <strong>Thread</strong> → 最小执行单位，有私有寄存器<br><br>
+        右侧标注了 CUDA 代码中对应的变量。
+      </div>
+    </div>
+    <div class="actions">
+      <button class="active-btn" onclick="switchLevel('grid')" id="btn-grid">Grid</button>
+      <button onclick="switchLevel('block')" id="btn-block">Block</button>
+      <button onclick="switchLevel('warp')" id="btn-warp">Warp</button>
+      <button onclick="switchLevel('thread')" id="btn-thread">Thread</button>
+      <button class="btn-play" onclick="playAll()">&#9654; 自动</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let level = "grid";
+
+function switchLevel(lv) {
+  level = lv;
+  document.querySelectorAll(".actions button").forEach(b => b.classList.remove("active-btn"));
+  document.getElementById("btn-" + lv)?.classList.add("active-btn");
+  draw();
+}
+
+const details = {
+  grid: `<div class="note">
+    <strong>Grid — 整个 Kernel 的线程集合</strong><br><br>
+    一个 Grid 包含多个 Block，分布在所有 SM 上并行执行。<br><br>
+    <table style="width:100%;font-size:0.8em;border-collapse:collapse">
+      <tr><td style="color:#fbbf24;padding:2px 4px">CUDA 变量</td><td style="padding:2px 4px"><code>gridDim.x, gridDim.y, gridDim.z</code></td></tr>
+      <tr><td style="color:#fbbf24;padding:2px 4px">启动语法</td><td style="padding:2px 4px"><code>kernel&lt;&lt;&lt;grid, block&gt;&gt;&gt;()</code></td></tr>
+      <tr><td style="color:#fbbf24;padding:2px 4px">硬件映射</td><td style="padding:2px 4px">多个 SM 并行执行不同 Block</td></tr>
+      <tr><td style="color:#fbbf24;padding:2px 4px">同步范围</td><td style="padding:2px 4px">Grid 级别无法同步 (kernel 边界)</td></tr>
+    </table>
+  </div>`,
+  block: `<div class="note">
+    <strong>Block — SM 上的调度单位</strong><br><br>
+    一个 Block 在单个 SM 上执行，包含多个 Warp。<br>
+    Block 内线程可以:<br>
+    &bull; 通过 <code>__syncthreads()</code> 同步<br>
+    &bull; 通过 <code>__shared__</code> 共享内存<br><br>
+    <table style="width:100%;font-size:0.8em;border-collapse:collapse">
+      <tr><td style="color:#fbbf24;padding:2px 4px">CUDA 变量</td><td style="padding:2px 4px"><code>blockDim.x, blockIdx.x</code></td></tr>
+      <tr><td style="color:#fbbf24;padding:2px 4px">典型大小</td><td style="padding:2px 4px">128 / 256 / 512 线程</td></tr>
+      <tr><td style="color:#fbbf24;padding:2px 4px">硬件限制</td><td style="padding:2px 4px">≤1024 线程/Block, ≤32 Block/SM</td></tr>
+    </table>
+  </div>`,
+  warp: `<div class="note">
+    <strong>Warp — 硬件执行的基本单位</strong><br><br>
+    32 个线程锁步执行同一条指令 (SIMT)。<br>
+    Warp 由 Warp Scheduler 调度，切换开销为零。<br><br>
+    <table style="width:100%;font-size:0.8em;border-collapse:collapse">
+      <tr><td style="color:#fbbf24;padding:2px 4px">线程数</td><td style="padding:2px 4px">固定 32 线程/Warp</td></tr>
+      <tr><td style="color:#fbbf24;padding:2px 4px">调度器</td><td style="padding:2px 4px">Warp Scheduler (4个/SM)</td></tr>
+      <tr><td style="color:#fbbf24;padding:2px 4px">分支问题</td><td style="padding:2px 4px">if-else → 串行执行两分支</td></tr>
+    </table>
+  </div>`,
+  thread: `<div class="note">
+    <strong>Thread — 最小执行单位</strong><br><br>
+    每个线程有私有寄存器和程序计数器。<br>
+    通过索引计算确定自己处理哪个数据元素。<br><br>
+    <table style="width:100%;font-size:0.8em;border-collapse:collapse">
+      <tr><td style="color:#fbbf24;padding:2px 4px">CUDA 变量</td><td style="padding:2px 4px"><code>threadIdx.x/y/z</code></td></tr>
+      <tr><td style="color:#fbbf24;padding:2px 4px">索引公式</td><td style="padding:2px 4px"><code>tid = blockIdx.x * blockDim.x + threadIdx.x</code></td></tr>
+      <tr><td style="color:#fbbf24;padding:2px 4px">私有存储</td><td style="padding:2px 4px">寄存器 (最快, ~1ns)</td></tr>
+    </table>
+  </div>`,
+};
+
+function draw() {
+  const svg = document.getElementById("main-svg");
+  const W = 800, H = 660;
+  let html = '';
+  html += `<rect x="0" y="0" width="${W}" height="${H}" rx="16" fill="#1a1a2e" stroke="#334155" stroke-width="2"/>`;
+
+  // 标题
+  const titles = {
+    grid: "Grid — 整个 Kernel，分布在多个 SM 上",
+    block: "Block (放大) — 在一个 SM 上执行，共享 Shared Memory",
+    warp: "Warp (放大) — 32 线程锁步执行 (SIMT)",
+    thread: "Thread (放大) — 最小执行单位，私有寄存器"
+  };
+  html += `<text x="${W/2}" y="24" text-anchor="middle" class="title" font-size="17">${titles[level]}</text>`;
+
+  if (level === "grid") {
+    html += drawGrid(W, H);
+  } else if (level === "block") {
+    html += drawBlock(W, H);
+  } else if (level === "warp") {
+    html += drawWarp(W, H);
+  } else if (level === "thread") {
+    html += drawThread(W, H);
+  }
+
+  // 层级导航条
+  const levels = ["grid","block","warp","thread"];
+  const lvNames = ["Grid", "Block", "Warp", "Thread"];
+  const lvColors = ["#3b82f6","#22c55e","#f59e0b","#ef4444"];
+  const barY = H - 36;
+  const totalW = 400;
+  const barX = (W - totalW) / 2;
+  html += `<rect x="${barX}" y="${barY}" width="${totalW}" height="20" rx="10" fill="#1e293b" stroke="#475569" stroke-width="1"/>`;
+  for (let i = 0; i < 4; i++) {
+    const segW = totalW / 4;
+    const segX = barX + i * segW;
+    const isActive = levels[i] === level;
+    html += `<rect x="${segX+2}" y="${barY+2}" width="${segW-4}" height="16" rx="8"
+      fill="${isActive ? lvColors[i] : 'transparent'}" opacity="${isActive ? 1 : 0.4}"
+      class="clickable" onclick="switchLevel('${levels[i]}')"/>`;
+    html += `<text x="${segX+segW/2}" y="${barY+14}" text-anchor="middle" font-size="11" fill="${isActive ? '#fff' : '#64748b'}" font-weight="${isActive ? 700 : 400}" style="pointer-events:none">${lvNames[i]}</text>`;
+    if (i < 3) {
+      html += `<text x="${segX+segW}" y="${barY+14}" text-anchor="middle" font-size="10" fill="#475569" style="pointer-events:none">→</text>`;
+    }
+  }
+
+  svg.innerHTML = html;
+}
+
+function drawGrid(W, H) {
+  let html = "";
+  // 4 个 SM
+  const smW = 140, smH = 240, smGap = 30;
+  const totalW = 4 * smW + 3 * smGap;
+  const startX = (W - totalW) / 2, startY = 60;
+
+  for (let s = 0; s < 4; s++) {
+    const sx = startX + s * (smW + smGap);
+    // SM 框
+    html += `<rect x="${sx}" y="${startY}" width="${smW}" height="${smH}" rx="8" fill="#0f1a0f" stroke="#22c55e" stroke-width="2" opacity="0.8"/>`;
+    html += `<text x="${sx+smW/2}" y="${startY+18}" text-anchor="middle" font-size="13" fill="#86efac" font-weight="700">SM ${s}</text>`;
+    // Blocks inside SM
+    const blockW = 36, blockH = 36, blocksPerSM = 3;
+    const blockGap = 8;
+    const totalBW = blocksPerSM * blockW + (blocksPerSM-1) * blockGap;
+    const blockStartX = sx + (smW - totalBW) / 2;
+    for (let b = 0; b < blocksPerSM; b++) {
+      const bx = blockStartX + b * (blockW + blockGap);
+      const by = startY + 40;
+      html += `<rect x="${bx}" y="${by}" width="${blockW}" height="${blockH}" rx="4" fill="#166534" stroke="#22c55e" stroke-width="1.5"/>`;
+      html += `<text x="${bx+blockW/2}" y="${by+22}" text-anchor="middle" font-size="11" fill="#bbf7d0">B${s*3+b}</text>`;
+    }
+    // SM annotations
+    html += `<text x="${sx+smW/2}" y="${startY+105}" text-anchor="middle" font-size="11" fill="#64748b">Shared Memory</text>`;
+    html += `<text x="${sx+smW/2}" y="${startY+118}" text-anchor="middle" font-size="11" fill="#64748b">最多 32 Blocks/SM</text>`;
+    // Warps inside each block (small dots)
+    for (let b = 0; b < blocksPerSM; b++) {
+      const bx = blockStartX + b * (blockW + blockGap);
+      const by = startY + 40;
+      for (let w = 0; w < 4; w++) {
+        html += `<rect x="${bx+4+w*7}" y="${by+blockH-8}" width="5" height="5" rx="1" fill="#f59e0b" opacity="0.7"/>`;
+      }
+    }
+  }
+
+  // 底部代码提示
+  html += `<text x="${W/2}" y="${startY+smH+40}" text-anchor="middle" font-size="14" fill="#fbbf24" font-family="SF Mono,Fira Code,monospace">kernel&lt;&lt;&lt;gridDim, blockDim&gt;&gt;&gt;()</text>`;
+  html += `<text x="${W/2}" y="${startY+smH+60}" text-anchor="middle" font-size="12" fill="#64748b">Grid: 跨 SM 分布 &nbsp;|&nbsp; Block: 在一个 SM 上 &nbsp;|&nbsp; Grid 级别无法同步</text>`;
+  return html;
+}
+
+function drawBlock(W, H) {
+  let html = "";
+  const bw = 500, bh = 360;
+  const bx = (W - bw) / 2, by = 55;
+  // Block 外框
+  html += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="10" fill="#0f1a0f" stroke="#22c55e" stroke-width="3"/>`;
+  html += `<text x="${bx+bw/2}" y="${by+22}" text-anchor="middle" font-size="16" fill="#86efac" font-weight="700">Block (blockDim = 256 线程 = 8 Warps)</text>`;
+
+  // Shared Memory 区域
+  html += `<rect x="${bx+12}" y="${by+36}" width="${bw-24}" height="34" rx="5" fill="#1e3a8a" stroke="#3b82f6" stroke-width="1.5"/>`;
+  html += `<text x="${bx+bw/2}" y="${by+58}" text-anchor="middle" font-size="13" fill="#93c5fd" font-weight="600">__shared__  Shared Memory  (Block 内所有线程共享)</text>`;
+
+  // Warps
+  const warpsPerBlock = 8;
+  const warpW = 52, warpH = 140;
+  const warpGap = 10;
+  const totalWW = warpsPerBlock * warpW + (warpsPerBlock - 1) * warpGap;
+  const warpStartX = bx + (bw - totalWW) / 2;
+  const warpY = by + 85;
+
+  for (let w = 0; w < warpsPerBlock; w++) {
+    const wx = warpStartX + w * (warpW + warpGap);
+    // Warp 框
+    html += `<rect x="${wx}" y="${warpY}" width="${warpW}" height="${warpH}" rx="5" fill="#1e1a0a" stroke="#f59e0b" stroke-width="1.5" class="clickable" onclick="switchLevel('warp')"/>`;
+    html += `<text x="${wx+warpW/2}" y="${warpY+14}" text-anchor="middle" font-size="11" fill="#fcd34d" font-weight="700">Warp ${w}</text>`;
+    // 32 个 Thread 小点 (4×8 网格)
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 8; c++) {
+        html += `<rect x="${wx+6+c*5}" y="${warpY+22+r*5}" width="3.5" height="3.5" rx="1" fill="#ef4444" opacity="0.7"/>`;
+      }
+    }
+    html += `<text x="${wx+warpW/2}" y="${warpY+warpH-8}" text-anchor="middle" font-size="9" fill="#94a3b8">32 threads</text>`;
+  }
+
+  // 底部注释
+  html += `<text x="${bx+bw/2}" y="${by+bh-14}" text-anchor="middle" font-size="12" fill="#64748b">__syncthreads() — Block 内所有线程同步 &nbsp;|&nbsp; 一个 Block 在一个 SM 上执行</text>`;
+
+  // 代码提示
+  html += `<text x="${W/2}" y="${by+bh+30}" text-anchor="middle" font-size="13" fill="#fbbf24" font-family="SF Mono,Fira Code,monospace">int tid = blockIdx.x * blockDim.x + threadIdx.x;</text>`;
+  return html;
+}
+
+function drawWarp(W, H) {
+  let html = "";
+  const ww = 520, wh = 280;
+  const wx = (W - ww) / 2, wy = 70;
+  html += `<rect x="${wx}" y="${wy}" width="${ww}" height="${wh}" rx="10" fill="#1e1a0a" stroke="#f59e0b" stroke-width="3"/>`;
+  html += `<text x="${wx+ww/2}" y="${wy+22}" text-anchor="middle" font-size="16" fill="#fcd34d" font-weight="700">Warp — 32 线程锁步执行 (SIMT)</text>`;
+
+  // 32 个线程
+  const cols = 16, rows = 2;
+  const cellW = 28, cellH = 48;
+  const cellGap = 3;
+  const totalCW = cols * cellW + (cols - 1) * cellGap;
+  const startX = wx + (ww - totalCW) / 2;
+  const startY = wy + 55;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const idx = r * cols + c;
+      const cx = startX + c * (cellW + cellGap);
+      const cy = startY + r * (cellH + 8);
+      // 线程方格
+      const isActive = idx < 16; // 一半线程演示分支发散
+      html += `<rect x="${cx}" y="${cy}" width="${cellW}" height="${cellH}" rx="3"
+        fill="${isActive ? '#7f1d1d' : '#1e1e3a'}" stroke="${isActive ? '#ef4444' : '#3b82f6'}" stroke-width="1"
+        class="clickable" onclick="switchLevel('thread')"/>`;
+      html += `<text x="${cx+cellW/2}" y="${cy+18}" text-anchor="middle" font-size="10" fill="${isActive ? '#fca5a5' : '#93c5fd'}">T${idx}</text>`;
+      html += `<text x="${cx+cellW/2}" y="${cy+34}" text-anchor="middle" font-size="9" fill="#64748b">${isActive ? 'if' : 'else'}</text>`;
+    }
+  }
+
+  // 分支发散说明
+  html += `<text x="${wx+ww/2}" y="${startY+rows*(cellH+8)+20}" text-anchor="middle" font-size="12" fill="#ef4444">Warp 分支发散: 红色走 if → 蓝色走 else → 串行执行，性能损失</text>`;
+
+  // 底部表达式
+  html += `<text x="${W/2}" y="${wy+wh+35}" text-anchor="middle" font-size="13" fill="#fbbf24" font-family="SF Mono,Fira Code,monospace">Warp = Block 内的 32 线程组 &nbsp;|&nbsp; SIMT: Single Instruction, Multiple Threads</text>`;
+  return html;
+}
+
+function drawThread(W, H) {
+  let html = "";
+  const tw = 400, th = 300;
+  const tx = (W - tw) / 2, ty = 80;
+  html += `<rect x="${tx}" y="${ty}" width="${tw}" height="${th}" rx="10" fill="#1a0f0f" stroke="#ef4444" stroke-width="3"/>`;
+  html += `<text x="${tx+tw/2}" y="${ty+22}" text-anchor="middle" font-size="16" fill="#fca5a5" font-weight="700">Thread — 最小执行单位</text>`;
+
+  // 私有寄存器
+  html += `<rect x="${tx+20}" y="${ty+40}" width="${tw-40}" height="50" rx="5" fill="#1e3a8a" stroke="#60a5fa" stroke-width="1.5"/>`;
+  html += `<text x="${tx+tw/2}" y="${ty+60}" text-anchor="middle" font-size="13" fill="#93c5fd" font-weight="600">私有寄存器 (Register File)</text>`;
+  html += `<text x="${tx+tw/2}" y="${ty+76}" text-anchor="middle" font-size="11" fill="#94a3b8">每个线程最多 255 个 32-bit 寄存器 &nbsp;|&nbsp; 最快访问 (~1ns)</text>`;
+
+  // 线程索引
+  html += `<rect x="${tx+20}" y="${ty+105}" width="${tw-40}" height="80" rx="5" fill="#1e293b" stroke="#475569" stroke-width="1"/>`;
+  html += `<text x="${tx+tw/2}" y="${ty+125}" text-anchor="middle" font-size="13" fill="#fbbf24" font-weight="600">线程索引 — 我是谁？我该算哪个数据？</text>`;
+  html += `<text x="${tx+tw/2}" y="${ty+148}" text-anchor="middle" font-size="15" fill="#f8fafc" font-family="SF Mono,Fira Code,monospace">threadIdx.x = 线程在 Block 内的位置</text>`;
+  html += `<text x="${tx+tw/2}" y="${ty+168}" text-anchor="middle" font-size="15" fill="#f8fafc" font-family="SF Mono,Fira Code,monospace">blockIdx.x = Block 在 Grid 中的位置</text>`;
+
+  // 全局 ID
+  html += `<rect x="${tx+40}" y="${ty+200}" width="${tw-80}" height="45" rx="5" fill="#0f1720" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="4,2"/>`;
+  html += `<text x="${tx+tw/2}" y="${ty+228}" text-anchor="middle" font-size="17" fill="#fbbf24" font-family="SF Mono,Fira Code,monospace" font-weight="700">tid = blockIdx.x * blockDim.x + threadIdx.x</text>`;
+
+  html += `<text x="${W/2}" y="${ty+th+30}" text-anchor="middle" font-size="12" fill="#64748b">tid 就是把"我是第几个线程"映射到"我应该处理哪个数据元素"</text>`;
+  return html;
+}
+
+async function playAll() {
+  const levels = ["grid","block","warp","thread"];
+  for (const lv of levels) {
+    await new Promise(r => setTimeout(r, 1500));
+    switchLevel(lv);
+  }
+}
+
+document.getElementById("detail-panel").innerHTML = details.grid;
+draw();
+</script>
+</body>
+</html>

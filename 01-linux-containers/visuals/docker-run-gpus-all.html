@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>docker run --gpus all 完整调用链路</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:16px 16px 6px; flex-shrink:0; }
+.header h1 { font-size:1.4em; color:#f8fafc; }
+.header p { color:#94a3b8; margin-top:2px; font-size:0.8em; }
+
+.main-wrap { max-width:1100px; width:100%; margin:0 auto; padding:0 16px 12px; display:flex; gap:20px; flex:1; min-height:0; }
+.main-left { flex:1; min-width:0; overflow-y:auto; }
+.main-right { width:370px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { flex:1; overflow-y:auto; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:14px 16px; margin-bottom:10px; }
+
+/* 命令栏 */
+.cmd-bar { background:#0f172a; border:1px solid #334155; border-radius:8px; padding:10px 16px; font-family:"SF Mono","Fira Code",monospace; font-size:0.82em; text-align:center; margin-bottom:20px; position:relative; }
+.cmd-bar .prompt { color:#4ade80; }
+.cmd-bar .cmd-text { color:#22d3ee; }
+
+/* 图层面板 */
+.layers { display:flex; flex-direction:column; gap:0; }
+.layer-label { font-size:0.7em; color:#64748b; padding:4px 0 4px 8px; text-transform:uppercase; letter-spacing:1px; border-bottom:1px dashed #1e293b; }
+
+/* 架构图区 */
+.arch { position:relative; padding:8px 0 16px; }
+
+/* 组件行 */
+.row { display:flex; align-items:center; justify-content:center; gap:0; margin:0; position:relative; }
+.row-spacer { height:4px; }
+
+/* 组件方块 */
+.comp { display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:10px; padding:10px 18px; min-width:130px; cursor:pointer; transition:all 0.2s; position:relative; z-index:2; text-align:center; border:2px solid transparent; }
+.comp:hover { filter:brightness(1.15); transform:scale(1.03); }
+.comp.active { border-color:#fbbf24; box-shadow:0 0 12px rgba(251,191,36,0.3); }
+.comp .name { font-weight:700; font-size:0.85em; line-height:1.3; }
+.comp .sub  { font-size:0.68em; color:rgba(255,255,255,0.55); margin-top:1px; }
+
+/* 组件颜色 */
+.c-user    { background:#1e3a8a; }   /* CLI */
+.c-dockerd { background:#0f766e; }   /* dockerd */
+.c-ctrd    { background:#7c2d12; }   /* containerd */
+.c-shim    { background:#854d0e; }   /* shim */
+.c-runc    { background:#6b21a8; }   /* runc */
+.c-hook    { background:#9a3412; }   /* nvidia hook */
+.c-kernel  { background:#166534; }   /* kernel */
+.c-gpu     { background:#1e40af; }   /* GPU */
+
+/* 箭头线 */
+.arrows { display:flex; flex-direction:column; align-items:center; position:relative; }
+.arrow-vert { display:flex; flex-direction:column; align-items:center; }
+.arrow-line { width:2px; height:18px; background:#475569; }
+.arrow-head { width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid #475569; }
+.arrow-label { font-size:0.62em; color:#64748b; white-space:nowrap; padding:2px 0; font-family:"SF Mono","Fira Code",monospace; }
+
+/* 横排箭头 */
+.arrow-horiz { display:flex; align-items:center; gap:0; }
+.arrow-h-line { width:40px; height:2px; background:#475569; }
+.arrow-h-head { width:0; height:0; border-top:4px solid transparent; border-bottom:4px solid transparent; border-left:5px solid #475569; }
+.arrow-h-label { font-size:0.6em; color:#64748b; padding:0 4px; font-family:"SF Mono","Fira Code",monospace; white-space:nowrap; }
+
+/* 层间边框 */
+.layer-box { border:1px solid #1e293b; border-radius:12px; padding:12px 16px; }
+.layer-box.user { border-color:#1e3a8a; }
+.layer-box.docker { border-color:#0f766e; }
+.layer-box.oci { border-color:#6b21a8; }
+.layer-box.kernel { border-color:#166534; }
+
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.8em; display:block; padding:3px 0; line-height:1.6; }
+.detail-panel .comment { color:#64748b; }
+.detail-panel .highlight { color:#fbbf24; }
+
+/* 按钮 */
+.actions { display:flex; gap:8px; justify-content:center; padding-top:12px; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.actions button:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-play { background:#15803d; color:#bbf7d0; }
+.btn-reset{ background:#334155; color:#cbd5e1; }
+
+.legend { display:flex; gap:14px; flex-wrap:wrap; font-size:0.7em; color:#64748b; padding-bottom:12px; justify-content:center; }
+.legend .dot { width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:3px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>&#128300; docker run --gpus all 完整调用链路</h1>
+  <p>模块 1 — Linux 基础与容器技术入门 &nbsp;|&nbsp; PPT 第 39 页 &nbsp;|&nbsp; 点击组件查看详情</p>
+</div>
+
+<div class="main-wrap">
+  <div class="main-left">
+    <div class="cmd-bar">
+      <span class="prompt">$</span> <span class="cmd-text">docker run --gpus all nvidia/cuda:12.4.0-devel-ubuntu22.04 nvidia-smi</span>
+    </div>
+
+    <div class="legend">
+      <span><span class="dot" style="background:#1e3a8a"></span>用户空间</span>
+      <span><span class="dot" style="background:#0f766e"></span>Docker 引擎</span>
+      <span><span class="dot" style="background:#6b21a8"></span>OCI Runtime</span>
+      <span><span class="dot" style="background:#166534"></span>Linux 内核</span>
+      <span><span class="dot" style="background:#1e40af"></span>硬件</span>
+    </div>
+
+    <div class="layers">
+    <!-- ===== 用户空间 ===== -->
+    <div class="layer-box user">
+      <div class="layer-label">用户空间</div>
+      <div class="arch">
+        <div class="row">
+          <div class="comp c-user" id="comp-cli" onclick="select('cli')">
+            <div class="name">Docker CLI</div>
+            <div class="sub">用户操作入口</div>
+          </div>
+        </div>
+        <div class="arrows">
+          <div class="arrow-vert">
+            <div class="arrow-line"></div>
+            <div class="arrow-head"></div>
+          </div>
+          <div class="arrow-label">Unix Socket</div>
+          <div class="arrow-vert">
+            <div class="arrow-line"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="comp c-dockerd" id="comp-dockerd" onclick="select('dockerd')">
+            <div class="name">dockerd</div>
+            <div class="sub">Docker Daemon</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Docker 引擎层 ===== -->
+    <div class="arrows">
+      <div class="arrow-vert">
+        <div class="arrow-line" style="height:12px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-label">gRPC</div>
+      <div class="arrow-vert">
+        <div class="arrow-line" style="height:12px"></div>
+      </div>
+    </div>
+
+    <div class="layer-box docker">
+      <div class="layer-label">Docker 引擎</div>
+      <div class="arch">
+        <div class="row">
+          <div class="comp c-ctrd" id="comp-ctrd" onclick="select('ctrd')">
+            <div class="name">containerd</div>
+            <div class="sub">容器生命周期管理</div>
+          </div>
+        </div>
+        <div class="arrows">
+          <div class="arrow-vert">
+            <div class="arrow-line"></div>
+            <div class="arrow-head"></div>
+          </div>
+          <div class="arrow-label">fork + exec</div>
+          <div class="arrow-vert">
+            <div class="arrow-line"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="comp c-shim" id="comp-shim" onclick="select('shim')">
+            <div class="name">containerd-shim</div>
+            <div class="sub">进程托管 (每个容器一个)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== OCI Runtime 层 ===== -->
+    <div class="arrows">
+      <div class="arrow-vert">
+        <div class="arrow-line" style="height:12px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-label">OCI Runtime (exec)</div>
+      <div class="arrow-vert">
+        <div class="arrow-line" style="height:12px"></div>
+      </div>
+    </div>
+
+    <div class="layer-box oci">
+      <div class="layer-label">OCI Runtime</div>
+      <div class="arch">
+        <div class="row">
+          <div class="comp c-runc" id="comp-runc" onclick="select('runc')">
+            <div class="name">runc</div>
+            <div class="sub">OCI 标准容器运行时</div>
+          </div>
+        </div>
+        <div class="arrows" style="padding:6px 0">
+          <div class="arrow-label" style="color:#fbbf24">runc 依次执行:</div>
+        </div>
+        <div class="row" style="gap:16px;flex-wrap:wrap">
+          <div class="comp c-kernel" style="min-width:110px;padding:8px 12px;font-size:0.78em" id="comp-ns" onclick="select('ns')">
+            <div class="name">① unshare</div>
+            <div class="sub">Namespace 隔离</div>
+          </div>
+          <div class="comp c-kernel" style="min-width:110px;padding:8px 12px;font-size:0.78em" id="comp-cg" onclick="select('cg')">
+            <div class="name">② cgroup</div>
+            <div class="sub">资源限制</div>
+          </div>
+          <div class="comp c-kernel" style="min-width:110px;padding:8px 12px;font-size:0.78em" id="comp-fs" onclick="select('fs')">
+            <div class="name">③ mount overlay</div>
+            <div class="sub">分层文件系统</div>
+          </div>
+        </div>
+
+        <!-- runc → hook 横线 -->
+        <div class="row" style="padding-top:10px">
+          <div class="arrow-horiz">
+            <div class="arrow-label">prestart hook</div>
+            <div class="arrow-h-line"></div>
+            <div class="arrow-h-head"></div>
+          </div>
+          <div class="comp c-hook" id="comp-hook" onclick="select('hook')" style="min-width:200px">
+            <div class="name">④ nvidia-container-toolkit</div>
+            <div class="sub">注入 GPU 设备 + 驱动库</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 内核层 ===== -->
+    <div class="arrows">
+      <div class="arrow-vert">
+        <div class="arrow-line" style="height:12px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-label">系统调用</div>
+      <div class="arrow-vert">
+        <div class="arrow-line" style="height:12px"></div>
+      </div>
+    </div>
+
+    <div class="layer-box kernel">
+      <div class="layer-label">Linux 内核</div>
+      <div class="arch">
+        <div class="row" style="gap:24px">
+          <div class="comp c-kernel" style="min-width:100px;padding:8px 12px;font-size:0.78em">
+            <div class="name">PID NS</div>
+          </div>
+          <div class="comp c-kernel" style="min-width:100px;padding:8px 12px;font-size:0.78em">
+            <div class="name">Mount NS</div>
+          </div>
+          <div class="comp c-kernel" style="min-width:100px;padding:8px 12px;font-size:0.78em">
+            <div class="name">Net NS</div>
+          </div>
+          <div class="comp c-kernel" style="min-width:100px;padding:8px 12px;font-size:0.78em">
+            <div class="name">Cgroup</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 硬件层 ===== -->
+    <div class="arrows">
+      <div class="arrow-vert">
+        <div class="arrow-line" style="height:12px"></div>
+        <div class="arrow-head"></div>
+      </div>
+      <div class="arrow-label">设备访问</div>
+      <div class="arrow-vert">
+        <div class="arrow-line" style="height:12px"></div>
+      </div>
+    </div>
+
+    <div class="arch">
+      <div class="row">
+        <div class="comp c-gpu" id="comp-gpu" onclick="select('gpu')">
+          <div class="name">&#9875; GPU</div>
+          <div class="sub">nvidia-smi 输出</div>
+        </div>
+      </div>
+    </div>
+    </div><!-- /layers -->
+  </div><!-- /main-left -->
+
+  <div class="main-right">
+    <!-- 详情面板 -->
+    <div class="detail-panel" id="detail-panel">
+      <div style="color:#64748b;font-size:0.82em;line-height:1.6">
+        &#128161; <strong>讲解提示</strong><br><br>
+        点击左侧任意组件查看详情，或使用下方按钮按调用链顺序逐步讲解。<br><br>
+        调用链:<br>
+        <code style="color:#60a5fa">CLI</code> → <code style="color:#14b8a6">dockerd</code> → <code style="color:#f97316">containerd</code> → <code style="color:#f97316">shim</code> → <code style="color:#a855f7">runc</code> → <code style="color:#22c55e">(NS → Cgroup → OverlayFS → GPU Hook)</code> → <code style="color:#3b82f6">GPU</code>
+      </div>
+    </div>
+
+    <!-- 按钮 -->
+    <div class="actions" style="flex-direction:row;flex-wrap:wrap;gap:6px;padding-top:12px">
+      <button class="btn-reset" onclick="resetAll()">&#8634; 重置</button>
+      <button class="btn-reset" onclick="prevStep()" id="btn-prev">&#9664; 上一步</button>
+      <button class="btn-reset" onclick="nextStep()" id="btn-next">下一步 &#9654;</button>
+      <button class="btn-play" id="btn-play" onclick="playAll()">&#9654; 自动</button>
+    </div>
+  </div><!-- /main-right -->
+</div>
+
+<script>
+const details = {
+  cli: `<code><span class="comment">// 用户在终端输入</span>
+<span class="highlight">$ docker run --gpus all nvidia/cuda:12.4.0-devel-ubuntu22.04 nvidia-smi</span>
+
+<span class="comment">// Docker CLI 解析参数，构造 API 请求
+// 通过 Unix Socket 发送给 dockerd</span>
+<span class="comment">// 通信地址: unix:///var/run/docker.sock</span></code>`,
+
+  dockerd: `<code><span class="comment">// dockerd 收到创建容器请求:</span>
+<span class="highlight">1. 解析参数</span>: --gpus all, 镜像名, 启动命令
+<span class="highlight">2. 拉取镜像</span>: 检查本地缓存 → 逐层下载 → 校验 sha256
+<span class="highlight">3. 生成 OCI spec</span>: 容器配置 JSON
+   - rootfs 路径 → 镜像层位置
+   - --gpus all → DeviceRequests
+   - cgroup 资源限制
+
+<span class="comment">// 通过 gRPC 调用 containerd 的 CreateContainer API</span></code>`,
+
+  ctrd: `<code><span class="comment">// containerd 收到 gRPC 请求:</span>
+<span class="highlight">1. 准备 rootfs</span>: 用 snapshotter 解压并叠加镜像层
+<span class="highlight">2. 为每个容器 fork 一个 containerd-shim 进程</span>
+<span class="highlight">3. shim 再调用 runc (OCI runtime)</span>
+
+<span class="comment">// shim 的作用:
+//   - 作为容器进程的父进程 (dockerd 重启不影响容器)
+//   - 收集 stdout/stderr 并转发
+//   - 向 containerd 报告容器退出状态</span></code>`,
+
+  shim: `<code><span class="comment">// containerd-shim 是容器进程的父进程</span>
+<span class="highlight">shim 的职责</span>:
+  - fork 并 exec runc create / runc start
+  - 作为容器 init 进程 (PID 1) 的祖父进程
+  - 容器退出时收割僵尸进程并报告退出码
+  - 转发容器的 stdio (stdout/stderr → docker logs)
+
+<span class="comment">// 每个容器都有一个独立的 shim 进程
+// shim → runc: "创建并启动这个容器"</span></code>`,
+
+  runc: `<code><span class="comment">// runc = OCI 标准容器运行时</span>
+<span class="comment">// runc create: 创建容器但不启动</span>
+<span class="comment">// runc start:  启动容器</span>
+
+<span class="highlight">runc create 做了什么:</span>
+  ① unshare → 创建 PID/Mount/Network/UTS Namespace
+  ② cgroup  → 创建 cgroup 并设置资源限制
+  ③ mount   → 挂载 OverlayFS (镜像层 + 容器层)
+  ④ hooks   → 调用 prestart hooks (包括 nvidia hook)
+
+<span class="highlight">runc start:</span>
+  ⑤ exec 用户指定的命令 (nvidia-smi)</code>`,
+
+  ns: `<code><span class="comment">// runc 第 1 步: Namespace 隔离</span>
+<span class="highlight">系统调用</span>: unshare(CLONE_NEWPID | CLONE_NEWNS |
+                        CLONE_NEWNET | CLONE_NEWUTS)
+
+<span class="comment">// 隔离效果:</span>
+PID Namespace    → 容器内 PID 从 1 重编，看不到宿主机进程
+Mount Namespace  → 容器有独立的文件系统挂载点视图
+Network Namespace→ 独立网卡(eth0)、IP、路由表、防火墙
+UTS Namespace    → 容器可以有自己的 hostname
+
+<span class="comment">// 对应 PPT §2: Namespace 原理</span></code>`,
+
+  cg: `<code><span class="comment">// runc 第 2 步: Cgroup 资源限制</span>
+<span class="highlight">创建 cgroup</span>:
+mkdir /sys/fs/cgroup/system.slice/docker-&lt;container-id&gt;.scope/
+
+<span class="highlight">设置限制</span>:
+echo $$ > cgroup.procs      <span class="comment">// 将容器进程加入 cgroup</span>
+<span class="comment">// 以下根据 docker run 参数自动设置:</span>
+--cpus=1.5   → cpu.max = "150000 100000"
+-m 512m      → memory.max = 536870912
+--pids-limit → pids.max
+
+<span class="comment">// 对应 PPT §2: Cgroup 原理</span></code>`,
+
+  fs: `<code><span class="comment">// runc 第 3 步: OverlayFS 挂载</span>
+<span class="highlight">mount -t overlay overlay</span> \\
+  -o lowerdir=/var/lib/docker/overlay2/.../diff,  <span class="comment">&lt;-- 镜像只读层</span>
+     upperdir=/var/lib/docker/overlay2/.../diff,  <span class="comment">&lt;-- 容器可写层</span>
+     workdir=/var/lib/docker/overlay2/.../work    <span class="comment">&lt;-- 工作目录</span>
+  /var/lib/docker/overlay2/.../merged             <span class="comment">&lt;-- 容器内 /</span>
+
+<span class="comment">// lowerdir 包含镜像的所有只读层 (FROM ubuntu → RUN apt...)
+// upperdir 是容器的 Copy-on-Write 可写层
+// merged 是容器内看到的完整文件系统</span>
+
+<span class="comment">// 对应 PPT §3: OverlayFS 原理</span></code>`,
+
+  hook: `<code><span class="comment">// runc prestart hook — 容器启动前最后一步</span>
+<span class="comment">// nvidia-container-toolkit 注册为 OCI prestart hook</span>
+
+<span class="highlight">nvidia-container-runtime-hook 执行:</span>
+
+1. 查询 GPU 设备 (NVML API):
+   --gpus all → 暴露所有 GPU
+
+2. 注入设备文件 (mknod):
+   /dev/nvidia0     (c 195:0)
+   /dev/nvidiactl   (c 195:255)
+   /dev/nvidia-uvm  (c ...)
+
+3. 挂载驱动库 (bind mount):
+   宿主机 libcuda.so → 容器内 /usr/local/nvidia/
+
+4. 设置环境变量:
+   NVIDIA_VISIBLE_DEVICES=all
+   LD_LIBRARY_PATH=/usr/local/nvidia/lib64
+
+<span class="comment">// 对应 PPT §4: NVIDIA Container Toolkit</span></code>`,
+
+  gpu: `<code><span class="comment">// 容器启动完成，执行用户命令</span>
+<span class="highlight">$ nvidia-smi</span>
+
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI ...    Driver Version: ...     CUDA Version: ...                |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+|===============================+======================+======================|
+|   0  NVIDIA A100-SXM4-80GB   On | 00000000:47:00.0 Off |                    0 |
++-------------------------------+----------------------+----------------------+
+
+<span class="highlight">整条链路走完!</span>
+<span class="comment">CLI → dockerd(gRPC) → containerd → shim(fork) → runc
+  → unshare + cgroup + overlay + nvidia-hook → GPU</span></code>`,
+};
+
+const playOrder = ["cli","dockerd","ctrd","shim","runc","ns","cg","fs","hook","gpu"];
+let activeId = null;
+let playIndex = -1;
+let playing = false;
+
+function select(id, scroll = true) {
+  // 移除旧高亮
+  document.querySelectorAll(".comp.active").forEach(el => el.classList.remove("active"));
+  // 设置新高亮
+  activeId = id;
+  const el = document.getElementById("comp-" + id);
+  if (el) {
+    el.classList.add("active");
+    if (scroll) el.scrollIntoView({ behavior:"smooth", block:"center" });
+  }
+  // 显示详情
+  const panel = document.getElementById("detail-panel");
+  if (details[id]) {
+    panel.innerHTML = details[id];
+  }
+}
+
+function nextStep() {
+  if (playing) return;
+  playIndex++;
+  if (playIndex >= playOrder.length) {
+    playIndex = -1;
+    resetAll();
+    return;
+  }
+  select(playOrder[playIndex], true);
+}
+
+function prevStep() {
+  if (playing) return;
+  if (playIndex <= 0) { playIndex = -1; resetAll(); return; }
+  playIndex--;
+  select(playOrder[playIndex], true);
+}
+
+async function playAll() {
+  if (playing) return;
+  playing = true;
+  document.getElementById("btn-play").disabled = true;
+  document.getElementById("btn-next").disabled = true;
+  document.getElementById("btn-prev").disabled = true;
+  resetAll();
+  playIndex = -1;
+
+  for (const id of playOrder) {
+    await new Promise(r => setTimeout(r, 900));
+    playIndex++;
+    select(id, true);
+  }
+  playing = false;
+  document.getElementById("btn-play").disabled = false;
+  document.getElementById("btn-next").disabled = false;
+  document.getElementById("btn-prev").disabled = false;
+}
+
+function resetAll() {
+  document.querySelectorAll(".comp.active").forEach(el => el.classList.remove("active"));
+  activeId = null;
+  playIndex = -1;
+  document.getElementById("detail-panel").innerHTML =
+    `<div style="color:#64748b;font-size:0.82em;line-height:1.6">
+      &#128161; <strong>讲解提示</strong><br><br>
+      点击左侧任意组件查看详情，或使用下方按钮按调用链顺序逐步讲解。<br><br>
+      调用链:<br>
+      <code style="color:#60a5fa">CLI</code> → <code style="color:#14b8a6">dockerd</code> → <code style="color:#f97316">containerd</code> → <code style="color:#f97316">shim</code> → <code style="color:#a855f7">runc</code> → <code style="color:#22c55e">(NS → Cgroup → OverlayFS → GPU Hook)</code> → <code style="color:#3b82f6">GPU</code>
+    </div>`;
+}
+</script>
+</body>
+</html>
