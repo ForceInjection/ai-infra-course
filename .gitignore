@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# 课程设计文档 (仅本地使用，不提交)
+syllabus.md
+ppt-outline.md
+
+# 生成的 PPT 文件
+*.pptx
+
+# 编译产物 (CUDA 二进制)
+**/code/vec_add
+**/code/matmul_naive
+**/code/matmul_tiled
+**/code/device_query
+*.o
+*.out

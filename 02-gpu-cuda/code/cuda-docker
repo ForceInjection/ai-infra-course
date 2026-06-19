@@ -1,0 +1,50 @@
+#!/bin/bash
+# CUDA 编译与运行脚本 (通过 Docker 容器)
+# 使用 lmcache/vllm-openai:v0.4.7-cu129 镜像 (包含 CUDA 12.9 + nvcc)
+#
+# 用法:
+#   ./cuda-docker make         编译
+#   ./cuda-docker run <prog>   运行指定程序
+#   ./cuda-docker all          编译并运行所有
+#   ./cuda-docker shell        进入容器的 bash
+
+IMAGE="lmcache/vllm-openai:v0.4.7-cu129"
+CODE_DIR="/root/ai-infra-course/02-gpu-cuda"
+
+case "${1:-all}" in
+    make)
+        docker run --rm --gpus all \
+            -v "$CODE_DIR:/code" -w /code \
+            --entrypoint /bin/bash \
+            "$IMAGE" -c "make clean && make all"
+        ;;
+    run)
+        shift
+        docker run --rm --gpus all \
+            -v "$CODE_DIR:/code" -w /code \
+            --entrypoint /bin/bash \
+            "$IMAGE" -c "./${1:-device_query}"
+        ;;
+    profile)
+        shift
+        docker run --rm --gpus all \
+            -v "$CODE_DIR:/code" -w /code \
+            --entrypoint /bin/bash \
+            "$IMAGE" -c "make profile"
+        ;;
+    all)
+        docker run --rm --gpus all \
+            -v "$CODE_DIR:/code" -w /code \
+            --entrypoint /bin/bash \
+            "$IMAGE" -c "make clean && make all && make run"
+        ;;
+    shell)
+        docker run -it --rm --gpus all \
+            -v "$CODE_DIR:/code" -w /code \
+            --entrypoint /bin/bash \
+            "$IMAGE"
+        ;;
+    *)
+        echo "Usage: $0 {make|run|profile|all|shell}"
+        ;;
+esac
