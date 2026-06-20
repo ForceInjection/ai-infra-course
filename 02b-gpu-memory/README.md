@@ -16,7 +16,8 @@ GPU 内存管理附录，从 CPU/GPU 对称性出发，介绍内存层级、DMA 
 ├── lab-environment.md                 # 实验环境说明
 ├── code/
 │   ├── README.md                      #   运行说明 + 预期输出
-│   └── 01_dma_bandwidth.py              #   CPU↔GPU 带宽测试 (ctypes)
+│   ├── 01_dma_bandwidth.py              #   CPU↔GPU 带宽测试 (Python ctypes)
+│   └── 02_dma_bandwidth.cu              #   CPU↔GPU 带宽测试 (CUDA C)
 └── visuals/
     └── gpu-memory-visual.html         # 6 层交互概念图
 ```

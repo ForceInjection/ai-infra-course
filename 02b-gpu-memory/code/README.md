@@ -1,6 +1,11 @@
 # 模块2 高级：GPU 内存管理 — 配套代码
 
-`01_dma_bandwidth.py` 使用 ctypes 直接调用 CUDA Runtime API，测量 pageable vs pinned 内存的 DMA 传输带宽。零依赖（仅需 `libcudart.so`）。
+两个版本的带宽测试程序，功能相同，测量 pageable vs pinned 内存的 DMA 传输带宽：
+
+| 文件                  | 语言            | 运行方式                                                           |
+| --------------------- | --------------- | ------------------------------------------------------------------ |
+| `01_dma_bandwidth.py` | Python (ctypes) | `python3 01_dma_bandwidth.py`，零依赖 (仅需 libcudart.so)          |
+| `02_dma_bandwidth.cu` | CUDA C          | `nvcc -O2 02_dma_bandwidth.cu -o dma_bandwidth && ./dma_bandwidth` |
 
 ## 环境要求
 

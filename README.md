@@ -14,17 +14,17 @@
 
 ## 课程目录
 
-| 模块 | 主题                                    | 状态     | 核心内容                                       |
-| ---- | --------------------------------------- | -------- | ---------------------------------------------- |
-| 1    | Linux 基础与容器技术入门                | ✔ 已评审 | Namespace/Cgroup/OverlayFS、Docker 分层        |
-| 2    | GPU 硬件架构与 CUDA 编程入门            | ✔ 已评审 | SM/Tensor Core/HBM/NVLink、CUDA Kernel、Tiling |
-| 2b   | GPU 内存管理 (高级)                     | ✔ 已评审 | Pinned/Pageable DMA、显存碎片化、跨进程共享    |
+| 模块 | 主题                                    | 状态     | 核心内容                                                |
+| ---- | --------------------------------------- | -------- | ------------------------------------------------------- |
+| 1    | Linux 基础与容器技术入门                | ✔ 已评审 | Namespace/Cgroup/OverlayFS、Docker 分层                 |
+| 2    | GPU 硬件架构与 CUDA 编程入门            | ✔ 已评审 | SM/Tensor Core/HBM/NVLink、CUDA Kernel、Tiling          |
+| 2b   | GPU 内存管理 (高级)                     | ✔ 已评审 | Pinned/Pageable DMA、显存碎片化、跨进程共享             |
 | 3    | GPU 虚拟化与容器化实践                  | ✔ 已评审 | MIG/Time-Slicing/HAMi、LD_PRELOAD CUDA 拦截、NVIDIA CTK |
-| 4    | Kubernetes 入门与 GPU 工作负载调度      | 待评审   | Device Plugin、DRA、Kueue                      |
-| 5    | 大模型推理框架入门：以 vLLM 为例        | 待评审   | PagedAttention、Continuous Batching            |
-| 6    | 大模型推理加速实践：KV Cache 原理与优化 | 待评审   | KV Cache、LMCache、量化压缩                    |
-| 7    | 云原生 AI 推理基础设施进阶：构建 MaaS   | 待评审   | AI 网关、路由、弹性伸缩                        |
-| 8    | 课程总结与 AI Infra 前沿展望            | 待评审   | Agent Infra、AI Native                         |
+| 4    | Kubernetes 入门与 GPU 工作负载调度      | 待评审   | Device Plugin、DRA、Kueue                               |
+| 5    | 大模型推理框架入门：以 vLLM 为例        | 待评审   | PagedAttention、Continuous Batching                     |
+| 6    | 大模型推理加速实践：KV Cache 原理与优化 | 待评审   | KV Cache、LMCache、量化压缩                             |
+| 7    | 云原生 AI 推理基础设施进阶：构建 MaaS   | 待评审   | AI 网关、路由、弹性伸缩                                 |
+| 8    | 课程总结与 AI Infra 前沿展望            | 待评审   | Agent Infra、AI Native                                  |
 
 ## 目录结构
 
