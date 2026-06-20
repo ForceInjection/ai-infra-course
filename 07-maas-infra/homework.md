@@ -1,10 +1,10 @@
-# 模块 7：云原生 AI 推理基础设施进阶：构建 MaaS — 课后练习
+# 模块 7：从推理引擎到服务平台 — 课后练习
 
-## 题目：设计一个企业级 MaaS 架构方案
+## 题目：设计企业级推理服务平台 + 增强 AI 网关
 
 ### 目标
 
-综合运用前 7 个模块的知识，设计一个支持 10 万 QPS 的企业级 MaaS 架构方案。
+综合运用前 7 个模块的知识，设计一个支持 10 万 QPS 的企业级推理服务架构方案，并动手增强课堂实现的 AI 网关。
 
 ### 截止时间
 
@@ -18,15 +18,15 @@
 
 假设你需要为一个 AI 创业公司设计推理服务平台，需求如下：
 
-| 维度 | 要求 |
-|------|------|
-| 目标 QPS | 100,000 (峰值) |
+| 维度     | 要求                                                              |
+| -------- | ----------------------------------------------------------------- |
+| 目标 QPS | 100,000 (峰值)                                                    |
 | 模型数量 | 10 个模型 (3 个小模型 0.5-7B, 5 个中模型 13-34B, 2 个大模型 72B+) |
-| 可用性 | 99.9% |
-| 平均延迟 | TTFT P95 < 500ms |
-| 多租户 | 支持 100 个企业客户，每个有独立配额 |
-| 安全 | API Key 认证 + 请求日志审计 |
-| 成本 | GPU 成本控制在 100 万/月以内 |
+| 可用性   | 99.9%                                                             |
+| 平均延迟 | TTFT P95 < 500ms                                                  |
+| 多租户   | 支持 100 个企业客户，每个有独立配额                               |
+| 安全     | API Key 认证 + 请求日志审计                                       |
+| 成本     | GPU 成本控制在 100 万/月以内                                      |
 
 完成以下设计：
 
@@ -51,27 +51,29 @@
 3. **Prometheus Metrics**: 暴露以下指标:
    - `requests_total{model, status}`
    - `request_duration_seconds{model, quantile}`
-   - `tokens_total{model, type}`  (type = input/output)
+   - `tokens_total{model, type}` (type = input/output)
 4. **请求日志**: JSON 格式日志，包含 timestamp, api_key, model, latency, tokens, status
 
 ---
 
 ## 进阶任务 (选做)
 
-### 任务 3: 部署 llm-d 体验
+### 任务 3: 部署 vLLM Router 体验
 
-在 K8s 集群中部署 llm-d，体验真正的云原生推理调度：
+安装 vLLM Router 并配置多模型路由：
 
 ```bash
-git clone https://github.com/ForceInjection/llm-d
-# 按照 README 部署
+pip install vllm-router
+vllm-router --workers 127.0.0.1:8001,127.0.0.1:8002 \
+    --lb-policy cache-aware --port 8080
 ```
 
-对比自研网关 vs llm-d 的功能差异。
+对比自研 Flask 网关 vs vLLM Router 的功能差异 (Cache-Aware LB、Circuit Breaker、PD 分离)。
 
 ### 任务 4: 成本优化分析
 
 使用 AI-fundamentals 中的成本分析材料，完成：
+
 - `09_inference_system/cost_analysis/llm_api_pricing_analysis.md` 的定价模型研究
 - 对比自建 MaaS vs 调用商业 API (如 OpenAI/DeepSeek API) 的成本边界
 
@@ -79,24 +81,24 @@ git clone https://github.com/ForceInjection/llm-d
 
 ## 提交要求
 
-1. 提交 MaaS 架构设计文档 (≤ 5 页)，包含：
+1. 提交推理服务平台架构设计文档 (≤ 5 页)，包含：
    - 架构图 (建议用 draw.io 或 Excalidraw)
-   - 组件选型和理由
-   - 容量规划计算过程
-   - 高可用设计方案
-2. 提交增强版网关代码
-3. (选做) llm-d 部署体验报告或成本分析报告
+   - 组件选型和理由 (AI 网关、推理引擎、GPU 型号)
+   - 容量规划计算过程 (模型权重 + KV Cache + 并发估算)
+   - 高可用设计方案 (多副本、跨 Zone、熔断降级)
+2. 提交增强版网关代码 (API Key 管理 + 按模型路由 + Prometheus Metrics + 请求日志)
+3. (选做) vLLM Router 部署体验报告或成本分析报告
 
 ---
 
 ## 评分标准
 
-| 维度 | 权重 | 要求 |
-|------|------|------|
-| 架构设计 | 40% | 完整的架构图 + 组件选型有理有据 |
-| 网关增强 | 30% | 实现所有要求的功能 |
-| 容量/成本分析 | 15% | 计算正确、考虑全面 |
-| 进阶任务 | 15% | 完成至少一项进阶任务 |
+| 维度          | 权重 | 要求                            |
+| ------------- | ---- | ------------------------------- |
+| 架构设计      | 40%  | 完整的架构图 + 组件选型有理有据 |
+| 网关增强      | 30%  | 实现所有要求的功能              |
+| 容量/成本分析 | 15%  | 计算正确、考虑全面              |
+| 进阶任务      | 15%  | 完成至少一项进阶任务            |
 
 ---
 

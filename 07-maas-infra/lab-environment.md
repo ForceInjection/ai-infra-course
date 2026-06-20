@@ -1,31 +1,31 @@
-# 模块 7：云原生 AI 推理基础设施进阶：构建 MaaS — 实验环境说明
+# 模块 7：从推理引擎到服务平台 — 实验环境说明
 
 ## 环境要求
 
 ### 硬件要求
 
-| 项目 | 最低配置 | 推荐配置 |
-|------|---------|---------|
-| CPU | 8 核, 32 GB 内存 | 16 核+, 64 GB+ |
-| 内存 | 32 GB | 64 GB+ |
-| 磁盘 | 100 GB SSD | 200 GB+ |
-| GPU | 1-2 × ≥ 8 GB 显存 | 2+ GPU (用于多后端实验) |
+| 项目 | 最低配置          | 推荐配置                |
+| ---- | ----------------- | ----------------------- |
+| CPU  | 8 核, 32 GB 内存  | 16 核+, 64 GB+          |
+| 内存 | 32 GB             | 64 GB+                  |
+| 磁盘 | 100 GB SSD        | 200 GB+                 |
+| GPU  | 1-2 × ≥ 8 GB 显存 | 2+ GPU (用于多后端实验) |
 
 ### 软件要求
 
-| 软件 | 版本 | 用途 |
-|------|------|------|
-| Kubernetes | ≥ 1.28 | 容器编排 |
-| kubectl | ≥ 1.28 | K8s CLI |
-| Helm | ≥ 3.12 | 包管理 |
-| vLLM | ≥ 0.6.0 | 推理引擎 |
-| Python | ≥ 3.10 | API 调用测试 |
+| 软件        | 版本    | 用途                                             |
+| ----------- | ------- | ------------------------------------------------ |
+| Python      | ≥ 3.10  | 网关实现 (Flask + requests)                      |
+| vLLM        | ≥ 0.6.0 | 推理引擎 (后端)                                  |
+| Flask       | latest  | 网关 Web 框架 (`pip install flask requests`)     |
+| Kubernetes  | ≥ 1.28  | 容器编排 (进阶实验可选)                          |
+| vLLM Router | latest  | 生产级 AI 网关 (选做: `pip install vllm-router`) |
 
 ---
 
 ## 环境搭建
 
-### Step 1: 确认 K8s 集群 + GPU
+### Step 1: 安装 Flask + 启动 vLLM 后端
 
 ```bash
 kubectl get nodes
@@ -53,14 +53,14 @@ spec:
         instance: "1"
     spec:
       containers:
-      - name: vllm
-        image: vllm/vllm-openai:latest
-        args: ["--model", "Qwen/Qwen2.5-0.5B-Instruct", "--port", "8000"]
-        resources:
-          limits:
-            nvidia.com/gpu: 1
-        ports:
-        - containerPort: 8000
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args: ["--model", "Qwen/Qwen2.5-0.5B-Instruct", "--port", "8000"]
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          ports:
+            - containerPort: 8000
 ---
 apiVersion: v1
 kind: Service
@@ -71,12 +71,10 @@ spec:
     app: vllm-backend
     instance: "1"
   ports:
-  - port: 8000
+    - port: 8000
 ```
 
-### Step 3: 部署简单网关 (Python 实现)
-
-如果 llm-d 部署复杂，可以使用一个简化的 Python 网关快速体验：
+### Step 3: 运行 Flask 网关
 
 ```python
 # simple_gateway.py

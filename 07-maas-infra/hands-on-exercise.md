@@ -1,13 +1,16 @@
-# 模块 7：云原生 AI 推理基础设施进阶：构建 MaaS — 课堂动手题
+# 模块 7：从推理引擎到服务平台 — 课堂动手题
 
-## 题目：搭建 MaaS 推理接入层
+## 题目：实现 AI 网关 — 路由 + 限流 + 故障转移
+
+> 对应 PPT 第 42 页
 
 ### 题目描述
 
-使用 Python 实现一个简化的 AI 网关，具备多模型路由、简单限流和故障转移功能，对接多个 vLLM 推理后端。
+使用 Python + Flask 实现一个简化 AI 网关，体验推理网关的核心机制：Token Bucket 限流、加权随机路由、健康检查与故障转移。对接两个 vLLM 推理后端。
 
 ### 预计时间
-20–25 分钟
+
+15–20 分钟
 
 ---
 
@@ -192,29 +195,35 @@ curl -s http://localhost:8080/v1/chat/completions \
 
 ## 讲解要点
 
-### 1. AI 网关 vs API 网关
-- 传统 (Kong/nginx): 基于 URL/Header 路由，限流 per request
-- AI 网关: 基于模型名/语义路由，限流 per token，流式代理
-- 核心差异: AI 网关需要理解推理请求的语义和生命周期
+### 1. AI 网关 vs 通用 API 网关
 
-### 2. 负载均衡策略的影响
-- Random: 简单但可能导致负载不均
-- Round-robin: 均匀但忽略 Prefix Cache 亲和性
-- Consistent Hashing: 同 session → 同后端 → 高 Prefix Cache 命中率
-- 生产环境推荐: Session-affine 路由 + 后端过载时的 fallback
+- 通用 (Kong/Nginx): 基于 URL/Header 路由，限流 per request，不理解请求内容
+- AI 网关 (vLLM Router): 基于模型名/语义路由，限流 per token (加权限流)，流式代理，推理感知——知道 Cache 命中率、GPU 利用率
+- 核心差异: AI 网关需要理解推理请求的语义和生命周期。「看见的是推理任务，不只是 HTTP 请求」
 
-### 3. 限流设计
-- Token Bucket: 允许突发 (burst capacity)，限制长时平均速率
-- Per API Key: 不同租户不同配额
-- 多层限流: 网关 + 引擎 (双重保护)
-- 限流后的处理: 429 → 客户端重试 + 指数退避
+### 2. 负载均衡策略的演进
 
-### 4. 健康检查与故障转移
-- Active: 定期 ping `/v1/models`
-- Passive: 请求失败时标记 unhealthy
-- Circuit Breaker: 连续失败 N 次 → 熔断 → 半开后试探 → 恢复或继续熔断
+- Random: 简单但 Cache 亲和性为 0 → Prefix Cache 命中率 ~30%
+- Consistent Hash: 同用户 → 同后端 → Cache 命中率 ~60%
+- Cache-Aware (vLLM Router 默认): 查 Worker 的 Cache 命中率→选最高的 → 命中率 ~85%
+- 生产推荐: Cache-Aware 优先 + Power of Two 回退
 
-### 5. 生产级增强
-- 模型注册中心 (etcd/consul): 动态发现后端
-- API 兼容性 (OpenAI format): 降低用户接入成本
-- 审计日志: 记录每次调用的 token 用量和延迟
+### 3. Token Bucket 限流
+
+- 原理: 固定速率产 Token，请求消耗 Token。允许 burst (桶容量)，限制长时平均速率
+- 三级限流: Per-User / Per-Model / Per-IP
+- 推理加权限流: `cost = input_tokens × 1.0 + output_tokens × 2.0` (Decode token 更贵)
+- 限流后处理: HTTP 429 + `Retry-After` header → 客户端指数退避重试
+
+### 4. 健康检查与 Circuit Breaker
+
+- 主动: 定期 GET `/health` or `/v1/models`
+- 被动: 请求失败 (5xx/超时) → 熔断器记录
+- Circuit Breaker: CLOSED → (失败 N 次) → OPEN (快速失败) → (超时) → HALF-OPEN → (成功) → CLOSED
+- vLLM Router: per-worker 粒度，一个挂了不影响其他
+
+### 5. 从课堂到生产
+
+- 课堂实现: Flask + Token Bucket + 加权随机 → 200 行，理解核心机制
+- 生产方案: vLLM Router (Rust) → Cache-Aware LB + Semantic Router + Circuit Breaker + K8s 原生
+- 生产还需要: 审计日志、Prometheus Metrics、金丝雀发布、多副本反亲和
