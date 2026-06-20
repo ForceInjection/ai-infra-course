@@ -1,200 +1,147 @@
 # 模块 3：GPU 虚拟化与容器化实践 — 课堂动手题
 
-## 题目：使用 HAMi 部署 GPU 共享环境
+## 题目：LD_PRELOAD 拦截实验 + GPU 容器构建
 
 ### 题目描述
 
-在 Kubernetes 集群中安装 HAMi，配置 GPU 显存和算力隔离，然后在同一张 GPU 上启动两个容器，验证资源隔离效果。
+通过两个实验理解 GPU 虚拟化的核心机制：
+
+1. **LD_PRELOAD malloc hook** — 理解函数拦截原理，这是 HAMi 的基石
+2. **GPU 容器验证** — 验证 NVIDIA Container Toolkit 的设备注入
 
 ### 预计时间
-20–25 分钟
+
+15 分钟
 
 ---
 
-## Part 1: HAMi 环境准备 (5 min)
+## 实验 1: LD_PRELOAD malloc hook (8 min)
 
-### Step 1: 确认 HAMi 已安装
+> 对应 PPT 第 12 页 + 第 33 页 [动手 1]
 
-```bash
-# 查看 HAMi 组件
-kubectl get pods -n kube-system | grep hami
+### Step 1: 编写 hook 代码 (3 min)
 
-# 查看节点 GPU 资源
-kubectl describe node <your-node> | grep -A 10 "nvidia.com"
+```c
+// mymalloc.c
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <dlfcn.h>
+
+static size_t total_allocated = 0;
+
+void *malloc(size_t size) {
+    static void *(*real_malloc)(size_t) = NULL;
+    if (!real_malloc)
+        real_malloc = dlsym(RTLD_NEXT, "malloc");
+
+    void *p = real_malloc(size);
+    total_allocated += size;
+    printf("[HOOK] malloc(%zu) = %p  (累计: %zu bytes)\n",
+           size, p, total_allocated);
+    return p;
+}
 ```
 
-预期看到节点上报了 `nvidia.com/gpu`、`nvidia.com/gpumem`、`nvidia.com/gpucores` 等资源。
-
-### Step 2: 确认节点 GPU 信息
+### Step 2: 编译并测试 (2 min)
 
 ```bash
-# 查看物理 GPU
-kubectl exec -n kube-system $(kubectl get pod -n kube-system -l app=hami-device-plugin -o jsonpath='{.items[0].metadata.name}') -- nvidia-smi
+# 编译为共享库
+gcc -shared -fPIC mymalloc.c -o libmymalloc.so -ldl
+
+# 用 LD_PRELOAD 运行任意程序
+LD_PRELOAD=./libmymalloc.so ls -la
+
+# 再试一个
+LD_PRELOAD=./libmymalloc.so python3 -c "x = [1]*1000"
 ```
+
+### Step 3: 思考与讨论 (3 min)
+
+- 观察: `ls` 和 `python3` 的 `malloc` 调用全部被我们的 hook 拦截了
+- 如果把 `malloc` 换成 `cuMemAlloc`，我们就可以：
+  - 记录每次显存分配的大小
+  - 检查累计分配是否超过配额 → 超配额时返回 `CUDA_ERROR_OUT_OF_MEMORY`
+  - 这就是 HAMi 显存隔离的核心！
+
+> **关键理解**: HAMi 的 `libvgpu.so` 就是用同样的方式 hook `cuMemAlloc`、`cuLaunchKernel` 等 CUDA API。
 
 ---
 
-## Part 2: GPU 共享实验 (15 min)
+## 实验 2: GPU 容器验证 (7 min)
 
-### Step 1: 创建两个共享 GPU 的 Pod
+> 对应 PPT 第 34 页 [动手 2]
 
-**Pod A — 申请 2GB 显存 + 30% 算力**:
+### Step 1: 基础验证 (2 min)
 
-```yaml
-# pod-a.yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: gpu-pod-a
-spec:
-  containers:
-  - name: cuda-app
-    image: nvidia/cuda:12.4.0-devel-ubuntu22.04
-    command: ["/bin/bash", "-c"]
-    args:
-      - |
-        echo "=== Pod A: GPU Info ==="
-        nvidia-smi
-        echo ""
-        echo "=== Running GPU memory test ==="
-        apt-get update -qq && apt-get install -y -qq python3-pip > /dev/null 2>&1
-        pip install torch -q
-        python3 -c "
-import torch
-print(f'CUDA available: {torch.cuda.is_available()}')
-print(f'GPU name: {torch.cuda.get_device_name(0)}')
-print(f'Total memory reported: {torch.cuda.get_device_properties(0).total_mem / 1024**3:.1f} GB')
-# Try allocating 1.5 GB
-try:
-    t = torch.zeros(1500 * 1024 * 1024 // 4, device='cuda')
-    print('Allocated 1.5 GB ✓')
-except Exception as e:
-    print(f'Allocation failed: {e}')
+```bash
+# 在容器内查看 GPU
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+
+# 查看容器内的 GPU 设备文件
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 ls -la /dev/nvidia*
+
+# 查看注入的环境变量
+docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 env | grep NVIDIA
+```
+
+### Step 2: CUDA 编译环境验证 (2 min)
+
+```bash
+# 用 devel 镜像编译并运行 CUDA 程序
+docker run --rm --gpus all -v $(pwd):/workspace nvidia/cuda:12.4.0-devel-ubuntu22.04 bash -c "
+cd /workspace
+cat > test.cu << 'EOF'
+#include <stdio.h>
+__global__ void hello() {
+    printf(\"GPU thread %d\\n\", threadIdx.x);
+}
+int main() {
+    hello<<<1,4>>>();
+    cudaDeviceSynchronize();
+    return 0;
+}
+EOF
+nvcc -o test test.cu && ./test
 "
-        echo "Pod A done. Sleeping..."
-        sleep 3600
-    resources:
-      limits:
-        nvidia.com/gpu: 1
-        nvidia.com/gpumem: 2048     # 2 GB 显存
-        nvidia.com/gpucores: 30     # 30% 算力
 ```
 
-**Pod B — 申请 2GB 显存 + 30% 算力**:
-
-```yaml
-# pod-b.yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: gpu-pod-b
-spec:
-  containers:
-  - name: cuda-app
-    image: nvidia/cuda:12.4.0-devel-ubuntu22.04
-    command: ["/bin/bash", "-c"]
-    args:
-      - |
-        echo "=== Pod B: GPU Info ==="
-        nvidia-smi
-        echo ""
-        echo "=== Running GPU memory test ==="
-        apt-get update -qq && apt-get install -y -qq python3-pip > /dev/null 2>&1
-        pip install torch -q
-        python3 -c "
-import torch
-print(f'CUDA available: {torch.cuda.is_available()}')
-# Try allocating 3 GB (should fail - exceeds 2 GB limit)
-try:
-    t = torch.zeros(3000 * 1024 * 1024 // 4, device='cuda')
-    print('Allocated 3 GB (unexpected - isolation failed!)')
-except Exception as e:
-    print(f'Allocation correctly failed: {e}')
-print('Memory isolation test passed!')
-"
-        echo "Pod B done. Sleeping..."
-        sleep 3600
-    resources:
-      limits:
-        nvidia.com/gpu: 1
-        nvidia.com/gpumem: 2048
-        nvidia.com/gpucores: 30
-```
-
-### Step 2: 部署并观察
+### Step 3: vLLM 推理镜像快速构建 (3 min)
 
 ```bash
-# 部署两个 Pod
-kubectl apply -f pod-a.yaml
-kubectl apply -f pod-b.yaml
+# 编写最简单的 vLLM Dockerfile
+cat > Dockerfile << 'EOF'
+FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
+RUN apt-get update && apt-get install -y python3-pip && pip install vllm
+ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+CMD ["--model", "Qwen/Qwen2.5-0.5B-Instruct", "--host", "0.0.0.0", "--port", "8000"]
+EOF
 
-# 查看 Pod 状态
-kubectl get pods -w
+# 构建 (可以只做前几步，不一定跑完)
+docker build -t vllm-demo:v1 .
 
-# 查看 Pod A 的日志
-kubectl logs gpu-pod-a
-
-# 查看 Pod B 的日志
-kubectl logs gpu-pod-b
-```
-
-### Step 3: 验证显存隔离
-
-```bash
-# 在每个 Pod 中查看 nvidia-smi 输出
-kubectl exec -it gpu-pod-a -- nvidia-smi
-kubectl exec -it gpu-pod-b -- nvidia-smi
-
-# 关键观察: 
-# - 两个 Pod 中的 nvidia-smi 显示的显存使用量是否符合配额
-# - Pod B 尝试分配 3GB 是否正确失败
-```
-
----
-
-## Part 3: 不使用 HAMi 的对比实验 (可选，5 min)
-
-如果你的 K8s 节点没有安装 HAMi，可以使用 Docker 直接演示 GPU 隔离效果：
-
-```bash
-# 容器 A — 不限制
-docker run --rm --gpus all nvidia/cuda:12.4.0-devel-ubuntu22.04 \
-    python3 -c "import torch; print(torch.cuda.memory_summary())"
-
-# 容器 B — 同时运行，观察显存竞争
-docker run --rm --gpus all nvidia/cuda:12.4.0-devel-ubuntu22.04 \
-    python3 -c "import torch; t = torch.zeros(5000000000, device='cuda'); print('Allocated 5 GB')"
+# 查看镜像大小和层
+docker history vllm-demo:v1
 ```
 
 ---
 
 ## 讲解要点
 
-### 1. HAMi 如何实现显存隔离？
-- `LD_PRELOAD` 注入 `libvgpu.so`，hook `cuMemAlloc`
-- 每次显存分配请求过来，检查累加用量是否超过配额
-- 超过配额 → 返回 `OUT_OF_MEMORY`
-- 进程退出 → 释放配额
+### 1. LD_PRELOAD = HAMi 的基石
 
-### 2. 算力限制的令牌桶算法
-- 令牌以配额速率生成 (如 30% → 每秒产生 0.3×max_tokens)
-- Kernel 启动前需获取令牌，令牌不足则阻塞
-- 反馈控制: 监控实际利用率，动态调整令牌速率
+- `dlsym(RTLD_NEXT, "malloc")` 获取原始函数 → 我们的 hook 调用原始函数 → 在前后加入检查逻辑
+- HAMi: `dlsym(RTLD_NEXT, "cuMemAlloc")` → 检查显存配额 → 调用真正的 `cuMemAlloc`
+- 「你刚写的 30 行代码，就是 HAMi 几千行代码的核心原理」
 
-### 3. 为什么 nvidia-smi 在容器内可能显示全部显存？
-- HAMi 的显存隔离是 CUDA API 层面的，`nvidia-smi` 查询的是硬件层面
-- HAMi 最新版本已支持 `nvidia-smi` 输出修正
-- 这是「用户态隔离」与「硬件隔离」的本质区别
+### 2. GPU 设备如何进入容器
 
-### 4. 三种共享模式的适用场景
-- **HAMi-core (默认)**: 灵活切分，适合大多数场景
-- **MIG**: 需要硬件级隔离的生产环境
-- **MPS**: 大量小任务高并发，追求最大吞吐量
+- `nvidia-container-runtime-hook` 在容器启动前执行
+- 通过 NVML 查询 GPU → `mknod` 创建设备文件 → `mount --bind` 挂载驱动库
+- 「容器内看到的 GPU，是宿主机通过 hook 注入的」
 
----
+### 3. 容器镜像分层
 
-## 清理
-
-```bash
-kubectl delete pod gpu-pod-a gpu-pod-b
-```
+- `nvidia/cuda:12.4.0-base` → ~100MB (只有运行时库)
+- `nvidia/cuda:12.4.0-runtime` → ~600MB (+cuBLAS/cuFFT)
+- `nvidia/cuda:12.4.0-devel` → ~3GB (+nvcc+头文件)
+- 推理用 runtime，编译用 devel

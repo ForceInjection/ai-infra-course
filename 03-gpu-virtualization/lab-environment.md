@@ -4,24 +4,24 @@
 
 ### 硬件要求
 
-| 项目 | 最低配置 | 推荐配置 |
-|------|---------|---------|
-| CPU | 8 核 | 16 核+ |
-| 内存 | 16 GB | 32 GB+ |
-| 磁盘 | 100 GB SSD | 200 GB+ |
-| GPU | NVIDIA GPU (A100/H100 或 RTX 20 系列+) | A100 或 H100 (用于 MIG 演示) |
-| GPU 显存 | 8 GB+ | 16 GB+ |
+| 项目     | 最低配置                               | 推荐配置                     |
+| -------- | -------------------------------------- | ---------------------------- |
+| CPU      | 8 核                                   | 16 核+                       |
+| 内存     | 16 GB                                  | 32 GB+                       |
+| 磁盘     | 100 GB SSD                             | 200 GB+                      |
+| GPU      | NVIDIA GPU (A100/H100 或 RTX 20 系列+) | A100 或 H100 (用于 MIG 演示) |
+| GPU 显存 | 8 GB+                                  | 16 GB+                       |
 
 ### 软件要求
 
-| 软件 | 版本 | 用途 |
-|------|------|------|
-| Docker Engine | ≥ 24.0 | 容器运行时 |
-| NVIDIA Driver | ≥ 535 | GPU 驱动 |
-| NVIDIA Container Toolkit | ≥ 1.14 | GPU 容器 |
-| Kubernetes | ≥ 1.28 (可选) | HAMi 部署 |
-| Helm | ≥ 3.12 (可选) | HAMi 安装 |
-| HAMi | ≥ 2.4 | GPU 虚拟化管理 |
+| 软件                     | 版本          | 用途           |
+| ------------------------ | ------------- | -------------- |
+| Docker Engine            | ≥ 24.0        | 容器运行时     |
+| NVIDIA Driver            | ≥ 535         | GPU 驱动       |
+| NVIDIA Container Toolkit | ≥ 1.14        | GPU 容器       |
+| Kubernetes               | ≥ 1.28 (可选) | HAMi 部署      |
+| Helm                     | ≥ 3.12 (可选) | HAMi 安装      |
+| HAMi                     | ≥ 2.4         | GPU 虚拟化管理 |
 
 ---
 
@@ -143,6 +143,7 @@ kubectl delete pod gpu-shared-test
 ## 常见问题
 
 ### Q: Docker GPU 容器报 "could not select device driver"
+
 ```bash
 # 确认 runtime 配置
 sudo nvidia-ctk runtime configure --runtime=docker
@@ -151,10 +152,12 @@ cat /etc/docker/daemon.json | grep nvidia
 ```
 
 ### Q: HAMi Pod 看不到 GPU 或显存显示为 0
+
 - 检查 Device Plugin 是否正常运行: `kubectl get pods -n kube-system | grep hami`
 - 检查节点资源: `kubectl describe node <node> | grep nvidia`
 
 ### Q: Minikube 中 GPU 不可用
+
 - Minikube 的 Docker driver 默认不支持 GPU Passthrough
 - 如果只需要体验 CPU 部分，可以跳过 GPU 相关的实验
 - 需要 GPU 实验建议使用裸机 K8s 或 k3s

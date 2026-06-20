@@ -1,168 +1,104 @@
 # 模块 3：GPU 虚拟化与容器化实践 — 课后练习
 
-## 题目：构建并优化 LLM 推理服务容器镜像
-
-### 目标
-
-构建一个包含 vLLM 的高效 Docker 镜像，实现 LLM 推理服务的一键部署。通过对比不同构建策略的镜像大小和启动速度，理解 Docker 镜像优化的实际价值。
+## 题目：LD_PRELOAD 原理验证 + GPU 虚拟化方案分析
 
 ### 截止时间
 
-下次课前 (一周)
+模块 4 课前
 
 ---
 
-## 基础任务 (必做)
+## 任务 1: 扩展 LD_PRELOAD hook (必做)
 
-### 任务 1: 构建基础 vLLM 镜像
+在课堂 `malloc` hook 的基础上，增加**配额限制**逻辑：
 
-编写一个 Dockerfile，构建包含 vLLM 的推理服务镜像：
+```c
+// quota_malloc.c
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <dlfcn.h>
+#include <stdlib.h>
 
-```dockerfile
-# Dockerfile.vllm (基础版本)
-FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
+#define QUOTA 1024  // 配额: 1024 bytes
 
-RUN apt-get update && apt-get install -y python3-pip git && \
-    pip install vllm
+static size_t used = 0;
 
-COPY serve.sh /serve.sh
-RUN chmod +x /serve.sh
+void *malloc(size_t size) {
+    static void *(*real_malloc)(size_t) = NULL;
+    if (!real_malloc)
+        real_malloc = dlsym(RTLD_NEXT, "malloc");
 
-ENTRYPOINT ["/serve.sh"]
+    if (used + size > QUOTA) {
+        fprintf(stderr, "[QUOTA] malloc(%zu) 超配额! (已用 %zu / 配额 %d)\n",
+                size, used, QUOTA);
+        return NULL;  // 模拟 CUDA_ERROR_OUT_OF_MEMORY
+    }
+
+    void *p = real_malloc(size);
+    used += size;
+    printf("[OK] malloc(%zu) → %p, 已用 %zu/%d\n", size, p, used, QUOTA);
+    return p;
+}
 ```
 
-`serve.sh`:
-```bash
-#!/bin/bash
-# 默认使用 Qwen2.5-0.5B (极小模型，适合实验)
-MODEL=${MODEL_NAME:-Qwen/Qwen2.5-0.5B-Instruct}
-python -m vllm.entrypoints.openai.api_server \
-    --model $MODEL \
-    --host 0.0.0.0 \
-    --port 8000
-```
+要求:
 
-```bash
-# 构建
-docker build -f Dockerfile.vllm -t vllm-service:basic .
-# 查看镜像大小
-docker images vllm-service:basic
-```
+1. 编写测试程序，依次分配 200、400、500、200 bytes
+2. 预期: 前三个分配成功，第四个返回 NULL（超配额）
+3. 讨论: 这和 HAMi 的 `cuMemAlloc` 拦截逻辑有什么异同？
 
-记录镜像大小和构建时间。
+## 任务 2: GPU 虚拟化方案对比分析 (必做)
 
-### 任务 2: 使用多阶段构建优化
+阅读 AI-fundamentals `04_cloud_native_ai_platform/gpu_manager/` 中的四部分教程，完成:
 
-修改 Dockerfile，使用多阶段构建减小镜像体积：
-
-```dockerfile
-# Dockerfile.vllm (优化版本)
-# --- Stage 1: Build ---
-FROM nvidia/cuda:12.4.0-devel-ubuntu22.04 AS builder
-RUN apt-get update && apt-get install -y python3-pip git
-RUN pip install --no-cache-dir vllm
-
-# --- Stage 2: Runtime ---
-FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
-RUN apt-get update && apt-get install -y python3-minimal
-COPY --from=builder /usr/local/lib/python3.*/dist-packages /usr/local/lib/python3.*/dist-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-COPY serve.sh /serve.sh
-RUN chmod +x /serve.sh
-ENTRYPOINT ["/serve.sh"]
-```
-
-对比优化前后的镜像大小。
-
-### 任务 3: 测试 GPU 虚拟化效果
-
-如果已完成模块 2 的实验且搭建了 HAMi，请在同一张 GPU 上：
-1. 启动两个 vLLM 服务实例（使用不同的模型或端口）
-2. 配置每个实例的显存限制
-3. 验证两个实例能否同时正常运行
-
-```yaml
-# 示例 Pod 配置
-apiVersion: v1
-kind: Pod
-metadata:
-  name: vllm-instance-1
-spec:
-  containers:
-  - name: vllm
-    image: vllm-service:optimized
-    env:
-    - name: MODEL_NAME
-      value: "Qwen/Qwen2.5-0.5B-Instruct"
-    resources:
-      limits:
-        nvidia.com/gpu: 1
-        nvidia.com/gpumem: 4096       # 4 GB 显存限制
-        nvidia.com/gpucores: 40       # 40% 算力
-    ports:
-    - containerPort: 8000
-```
+1. 画出 MIG、Time-Slicing、HAMi-core、MPS 四种方案的「隔离级别 × 灵活性」象限图
+2. 对于以下三个场景，分别推荐哪种方案？说明理由:
+   - 场景 A: 医疗影像 AI，对数据安全要求极高，需要硬件级隔离
+   - 场景 B: 互联网公司推理集群，运行 20+ 个小模型，需要灵活资源切分
+   - 场景 C: 高校实验室，学生共享少量 GPU 做课程实验
 
 ---
 
 ## 进阶任务 (选做)
 
-### 任务 4: 镜像安全扫描
+### 任务 3: 深入 HAMi 源码
 
-使用 Docker Scout 或 Trivy 扫描镜像的安全漏洞：
+阅读 HAMi 的 `libvgpu.so` 相关源码，找到 `cuMemAlloc` 和 `cuLaunchKernel` 的拦截实现。画出拦截流程图。
 
-```bash
-# 使用 Trivy
-docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-    aquasec/trivy image vllm-service:optimized
+### 任务 4: 多阶段构建优化
 
-# 或使用 Docker Scout
-docker scout quickview vllm-service:optimized
-```
+构建两个版本的 vLLM 镜像:
 
-报告关键漏洞并提供修复建议。
+- 版本 A: 单阶段 (FROM devel，编译+运行都在一个镜像)
+- 版本 B: 多阶段 (devel 编译 → runtime 运行)
 
-### 任务 5: 实现多架构镜像构建
-
-使用 `docker buildx` 构建同时支持 x86_64 和 arm64 的镜像：
-
-```bash
-docker buildx create --name multiarch --use
-docker buildx build --platform linux/amd64,linux/arm64 \
-    -f Dockerfile.vllm -t vllm-service:multiarch --push .
-```
+对比两个版本的大小，记录优化效果。
 
 ---
 
 ## 提交要求
 
-1. 提交两个 Dockerfile (基础版 + 优化版)
-2. 提交 `serve.sh` 脚本
-3. 提交实验报告 (≤ 2 页)，包含：
-   - 基础版 vs 优化版的镜像大小对比
-   - 镜像构建时间对比
-   - 镜像每一层的大小分布 (`docker history` 输出)
-   - 基础版 vs 优化版的冷启动时间对比
-   - (可选) 安全扫描结果
-4. 如果能运行 GPU 虚拟化测试，提交日志截图
+1. 提交 `quota_malloc.c` + 测试程序 + 运行结果截图
+2. 提交 GPU 虚拟化方案对比分析 (≤ 2 页)
+3. (选做) HAMi 源码分析 或 多阶段构建对比
 
 ---
 
 ## 评分标准
 
-| 维度 | 权重 | 要求 |
-|------|------|------|
-| 任务 1-3 完成度 | 60% | 成功构建两个镜像，完成大小对比 |
-| 优化效果 | 15% | 多阶段构建有明显的大小缩减 |
-| 实验报告 | 15% | 有数据支撑的对比分析 |
-| 进阶任务 | 10% | 完成至少一项进阶任务 |
+| 维度                | 权重 | 要求                              |
+| ------------------- | ---- | --------------------------------- |
+| 任务 1 (LD_PRELOAD) | 30%  | 正确实现配额限制，测例通过        |
+| 任务 2 (方案分析)   | 45%  | 象限图清晰 + 三个场景选型有理有据 |
+| 文档质量            | 15%  | 截图清晰、描述完整                |
+| 进阶任务            | 10%  | 完成至少一项                      |
 
 ---
 
 ## 参考资料
 
-- AI-fundamentals: `02_gpu_programming/01_environment/02_cuda_image_build_analysis.md` — CUDA 镜像构建深度解析
-- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/hami/hmai-gpu-resources-guide.md` — HAMi 资源管理手册
-- [Docker Multi-stage Builds](https://docs.docker.com/build/building/multi-stage/)
-- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/)
-- [vLLM Docker 官方镜像](https://docs.vllm.ai/en/latest/getting_started/installation.html)
+- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/第一部分：基础理论篇.md` — 概念与选型
+- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/第二部分：虚拟化技术篇.md` — 三种虚拟化实现
+- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/hami/hmai-gpu-resources-guide.md` — HAMi 手册
+- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/hami/KAI_vs_HAMi_Comparison.md` — KAI vs HAMi
+- [HAMi GitHub](https://github.com/Project-HAMi/HAMi)

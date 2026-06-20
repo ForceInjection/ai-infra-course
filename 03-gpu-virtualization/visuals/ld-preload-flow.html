@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LD_PRELOAD 拦截原理可视化</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:14px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#f8fafc; }
+.header p { color:#94a3b8; margin-top:2px; font-size:0.78em; }
+.main-wrap { max-width:1250px; width:100%; margin:0 auto; padding:0 10px 8px; display:flex; gap:14px; flex:1; min-height:0; align-items:flex-start; }
+.main-left { flex:1; min-width:0; overflow-y:auto; display:flex; align-items:center; justify-content:center; }
+.main-right { width:340px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { height:500px; overflow-y:auto; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:14px 16px; margin-bottom:8px; flex-shrink:0; }
+.detail-panel .note { color:#94a3b8; font-size:0.8em; line-height:1.7; }
+.detail-panel .note strong { color:#f8fafc; }
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.78em; background:#1e293b; padding:1px 4px; border-radius:3px; color:#fbbf24; }
+.actions { display:flex; gap:6px; flex-wrap:wrap; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; background:#334155; color:#cbd5e1; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.actions button:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-next { background:#1e40af !important; color:#bfdbfe !important; }
+.btn-play { background:#15803d !important; color:#bbf7d0 !important; }
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>&#128279; LD_PRELOAD 函数拦截原理</h1>
+  <p>模块 3 — GPU 虚拟化与容器化实践 &nbsp;|&nbsp; PPT 第 11-12 页 &nbsp;|&nbsp; 点击「下一步」逐步演示</p>
+</div>
+<div class="main-wrap">
+  <div class="main-left">
+    <svg id="main-svg" viewBox="0 0 920 580"></svg>
+  </div>
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        &#128161; <strong>LD_PRELOAD 拦截原理</strong><br><br>
+        当程序调用 <code>malloc()</code> 时，动态链接器决定<strong>调用哪个库的版本</strong>。<br><br>
+        <code>LD_PRELOAD</code> 环境变量让我们的库<strong>优先</strong>被查找，从而<strong>替换</strong>系统函数。<br><br>
+        点击「下一步」查看完整流程 →<br><br>
+        <strong>关键</strong>: HAMi 用同样的机制拦截 <code>cuMemAlloc</code>、<code>cuLaunchKernel</code>。
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-next" onclick="nextStep()" id="btn-next">下一步 &#9654;</button>
+      <button class="btn-play" onclick="playAll()">&#9654; 自动</button>
+      <button onclick="resetAll()">&#8634; 重置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var step = 0, maxSteps = 6, playing = false;
+
+function nextStep() { if (!playing && step < maxSteps) { step++; draw(); } }
+function resetAll() { step = 0; draw(); }
+async function playAll() {
+  if (playing) return; playing = true;
+  document.getElementById("btn-next").disabled = true;
+  resetAll();
+  for (var i = 0; i < maxSteps; i++) {
+    await new Promise(function(r){setTimeout(r,1200)});
+    step++; draw();
+  }
+  playing = false;
+  document.getElementById("btn-next").disabled = false;
+}
+
+function R(x,y,w,h,f,s,sw,rx) {
+  sw=sw||0.5; rx=rx||2;
+  return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+rx+'" fill="'+f+'" stroke="'+s+'" stroke-width="'+sw+'"/>';
+}
+function T(x,y,text,size,fill,anchor,weight) {
+  return '<text x="'+x+'" y="'+y+'" text-anchor="'+(anchor||'middle')+'" font-size="'+size+'" fill="'+fill+'" font-weight="'+(weight||'normal')+'" font-family="sans-serif">'+text+'</text>';
+}
+function arrow(x1,y1,x2,y2,color,sw) {
+  var h='', dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy);
+  if(len<1) return h;
+  sw=sw||2.5; color=color||'#475569';
+  h+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+color+'" stroke-width="'+sw+'"/>';
+  var ux=dx/len, uy=dy/len, sz=10, px=x2-ux*sz, py=y2-uy*sz;
+  h+='<polygon points="'+x2+','+y2+' '+(px-uy*sz*0.5)+','+(py+ux*sz*0.5)+' '+(px+uy*sz*0.5)+','+(py-ux*sz*0.5)+'" fill="'+color+'"/>';
+  return h;
+}
+function box(x,y,w,h,label,sub,fg,bg,stroke,active) {
+  var hh='';
+  hh+=R(x,y,w,h,bg,stroke,active?2.5:1,10);
+  hh+=T(x+w/2,y+h/2-2,label,14,fg,'middle','bold');
+  if(sub) hh+=T(x+w/2,y+h/2+14,sub,10,fg,'middle');
+  return hh;
+}
+
+function draw() {
+  var svg = document.getElementById("main-svg");
+  var W=920,H=580, h='';
+  h+=R(0,0,W,H,'#1a1a2e','#334155',2,16);
+
+  var titles = [
+    "LD_PRELOAD — Linux 动态链接器拦截机制",
+    "Step 1: 程序启动 — 动态链接器 (ld.so) 加载共享库",
+    "Step 2: LD_PRELOAD 让我们的库优先被加载",
+    "Step 3: 程序调用 malloc() — 链接器查找符号",
+    "Step 4: 链接器在 libmymalloc.so 中找到了 malloc!",
+    "Step 5: 我们的 hook: 检查配额 → 调用真正的 malloc",
+    "总结: HAMi 用同样的方法拦截 CUDA API"
+  ];
+  h+=T(W/2, 24, titles[Math.min(step,titles.length-1)], 15, '#f8fafc', 'middle', 'bold');
+
+  // ── TOP ROW: App → Linker ──
+  var appW=140, appH=56, appX=(W-appW)/2, appY=62, lkW=680, lkH=60, lkX=(W-lkW)/2, lkY=150;
+
+  // App
+  h+=box(appX,appY,appW,appH,'应用程序',null,'#bfdbfe','#1e3a8a','#3b82f6',step>=1);
+  h+=T(appX+appW/2,appY-10,'调用 malloc(123)',11,'#60a5fa');
+
+  // Dynamic linker (full width)
+  h+=box(lkX,lkY,lkW,lkH,'ld.so — 动态链接器','查找符号表，决定调用哪个库的 malloc','#99f6e4','#0f766e','#14b8a6',step>=1);
+
+  if(step>=1)
+    h+=arrow(appX+appW/2,appY+appH,W/2,lkY,'#475569',2);
+
+  // ── BOTTOM: Our lib vs System libc ──
+  var olW=240, olH=70, olX=lkX+50, olY=290;
+  var slW=240, slH=70, slX=lkX+lkW-slW-50, slY=290;
+
+  // Our lib (orange, left)
+  h+=box(olX,olY,olW,olH,'libmymalloc.so','我们的 malloc hook','#fed7aa','#7c2d12','#f97316',step>=2);
+  if(step>=2) h+=T(olX+olW*0.28,olY-10,'LD_PRELOAD 加载',11,'#fb923c');
+
+  // System libc (gray, right)
+  h+=box(slX,slY,slW,slH,'libc.so (系统)','原始 malloc','#94a3b8','#1e293b','#475569',step>=3);
+  if(step>=3) h+=T(slX+slW*0.65,slY-10,'后备查找',10,'#64748b');
+
+  // Arrows from linker to libs
+  if(step>=2) {
+    h+=arrow(lkX+lkW*0.3,lkY+lkH,olX+olW/2,olY,'#22c55e',3);
+    h+=T(olX+olW*0.28,olY-26,'① 优先','11','#22c55e','middle','bold');
+  }
+  if(step>=3) {
+    h+=arrow(lkX+lkW*0.7,lkY+lkH,slX+slW/2,slY,'#475569',2);
+    h+=T(slX+slW*0.65,slY-26,'② 后备','10','#64748b');
+  }
+
+  // ── HOOK LOGIC (bottom center) ──
+  if(step>=4) {
+    var hkW=500, hkH=82, hkX=(W-hkW)/2, hkY=410;
+    h+=R(hkX,hkY,hkW,hkH,'#2e1065','#a855f7',2,10);
+    h+=T(hkX+hkW/2,hkY+22,'malloc(size) → 检查配额 → 调用 true_malloc(size)','13','#d8b4fe','middle','bold');
+    if(step>=5)
+      h+=T(hkX+hkW/2,hkY+48,'true_malloc = dlsym(RTLD_NEXT, "malloc");   // 获取真正的 malloc','11','#c084fc','middle');
+    if(step>=6)
+      h+=T(hkX+hkW/2,hkY+68,'超配额 → return NULL  (模拟 CUDA_ERROR_OUT_OF_MEMORY)','11','#f87171','middle');
+  }
+
+  // ── Final summary ──
+  if(step>=6)
+    h+=T(W/2, H-18, 'HAMi 的 libvgpu.so 将 malloc 换成 cuMemAlloc / cuLaunchKernel — 原理完全一致', 11, '#fbbf24', 'middle');
+
+  var descs = [
+    "<strong>LD_PRELOAD 拦截原理</strong><br><br>当程序调用 <code>malloc()</code> 时，动态链接器决定<strong>调用哪个库的版本</strong>。<br><br><code>LD_PRELOAD</code> 环境变量让我们的库<strong>优先</strong>被查找，从而<strong>替换</strong>系统函数。<br><br>点击「下一步」查看完整流程 →<br><br><strong>关键</strong>: HAMi 用同样的机制拦截 <code>cuMemAlloc</code>、<code>cuLaunchKernel</code>。",
+    "<strong>Step 1: 程序启动</strong><br><br>每个 Linux 程序启动时，动态链接器 (<code>ld.so</code>) 负责加载所有需要的 <code>.so</code> 文件。<br><br>例如 <code>ls</code> 命令依赖 <code>libc.so</code> 提供 <code>malloc</code>、<code>printf</code> 等函数。",
+    "<strong>Step 2: LD_PRELOAD 优先加载</strong><br><br>设置 <code>LD_PRELOAD=./libmymalloc.so</code> 后，动态链接器会<strong>优先</strong>从这个库查找符号。<br><br>这意味着 <code>libmymalloc.so</code> 中的 <code>malloc</code> 会抢在系统的 <code>malloc</code> 之前被找到。",
+    "<strong>Step 3: 符号查找</strong><br><br>程序调用 <code>malloc(123)</code> 时，动态链接器开始查找名为 <code>malloc</code> 的函数:<br><br>① 先查 LD_PRELOAD 指定的库<br>② 再查程序的直接依赖<br>③ 最后查系统默认路径",
+    "<strong>Step 4: 找到我们的 malloc!</strong><br><br>链接器在 <code>libmymalloc.so</code> 中找到了 <code>malloc</code> → <strong>调用我们的版本</strong>。<br><br>我们的 <code>malloc</code> 可以做任何事: 打印日志、检查配额、修改参数...<br><br>然后通过 <code>dlsym(RTLD_NEXT, \"malloc\")</code> 获取<strong>真正的</strong> malloc 并调用它。",
+    "<strong>Step 5: 配额检查</strong><br><br>这是 HAMi 的核心逻辑:<br><br><code>if (used + size > QUOTA) return NULL;</code><br><br>超配额 → 返回 NULL (模拟 <code>CUDA_ERROR_OUT_OF_MEMORY</code>)<br>未超 → 调用真正的 <code>malloc</code> → 返回指针",
+    "<strong>HAMi 如何应用?</strong><br><br>把 <code>malloc</code> 换成 <code>cuMemAlloc</code>:<br><br><code>cuMemAlloc(ptr, 1GB)</code><br>→ libvgpu.so 检查显存配额<br>→ 允许/拒绝<br>→ 调用真正的 cuMemAlloc<br><br>同样，<code>cuLaunchKernel</code> 被令牌桶限制调用频率。<br><br>「你刚写的 30 行 malloc hook，就是 HAMi 的核心原理。」"
+  ];
+  document.getElementById("detail-panel").innerHTML = '<div class="note">'+descs[step]+'</div>';
+  svg.innerHTML = h;
+}
+
+draw();
+</script>
+</body>
+</html>
