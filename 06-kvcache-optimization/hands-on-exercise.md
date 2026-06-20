@@ -9,6 +9,7 @@
 3. 计算不同模型的 KV Cache 显存需求
 
 ### 预计时间
+
 20–25 分钟
 
 ---
@@ -154,6 +155,7 @@ for i, prompt in enumerate(PROMPTS):
 ## 讲解要点
 
 ### 1. KV Cache 显存公式的直观理解
+
 - `× 2`: Key + Value 两组矩阵
 - `× n_layers`: 每层都需要自己的 KV Cache
 - `× n_kv_heads × d_head`: 每个 head 的维度
@@ -161,17 +163,20 @@ for i, prompt in enumerate(PROMPTS):
 - GQA 把 KV heads 减少 → Cache 显著减小 (Qwen2.5-7B 用 4 KV heads vs 28 Q heads)
 
 ### 2. Prefix Caching 的命中条件
+
 - 必须是 **完全相同的前缀 token 序列**
 - 从 prompt 起始位置匹配，不是子串匹配
 - Hash 以 block (16 tokens) 为单位，块级匹配
 - 命中后该 block 的 Prefill 被跳过 → 加速
 
 ### 3. LMCache vs APC 的区别
+
 - APC: 单节点内，前缀匹配，自动生效
 - LMCache: 跨节点共享，分层存储，支持非前缀复用 (CacheBlend)
 - LMCache 适合集群级部署，APC 适合单节点
 
 ### 4. Offloading 的延迟代价
+
 - GPU HBM 访问 ~1 TB/s → 延迟 ~0.1 μs
 - CPU DRAM 访问 ~100 GB/s → 延迟 ~0.1 μs (但 copy 到 GPU 才有 ~10 μs)
 - NVMe 访问 ~3-7 GB/s → 延迟 ~100 μs

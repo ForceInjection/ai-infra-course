@@ -4,20 +4,20 @@
 
 ### 硬件要求
 
-| 项目 | 最低配置 | 推荐配置 |
-|------|---------|---------|
-| CPU | 8 核, ≥ 32 GB 内存 | 16 核+, 64 GB+ 内存 |
-| 内存 | 32 GB | 64 GB+ (用于 Offloading 实验) |
-| 磁盘 | 100 GB NVMe SSD | 200 GB+ |
-| GPU | ≥ 8 GB 显存 | ≥ 16 GB 显存 |
+| 项目 | 最低配置           | 推荐配置                      |
+| ---- | ------------------ | ----------------------------- |
+| CPU  | 8 核, ≥ 32 GB 内存 | 16 核+, 64 GB+ 内存           |
+| 内存 | 32 GB              | 64 GB+ (用于 Offloading 实验) |
+| 磁盘 | 100 GB NVMe SSD    | 200 GB+                       |
+| GPU  | ≥ 8 GB 显存        | ≥ 16 GB 显存                  |
 
 ### 软件要求
 
-| 软件 | 版本 | 用途 |
-|------|------|------|
-| Python | ≥ 3.10 | 运行推理框架 |
-| vLLM | ≥ 0.6.0 | 推理引擎 |
-| LMCache | ≥ 0.1 | KV Cache 分层存储 |
+| 软件    | 版本    | 用途              |
+| ------- | ------- | ----------------- |
+| Python  | ≥ 3.10  | 运行推理框架      |
+| vLLM    | ≥ 0.6.0 | 推理引擎          |
+| LMCache | ≥ 0.1   | KV Cache 分层存储 |
 
 ---
 
@@ -44,6 +44,7 @@ pip install lmcache
 ### Step 3: 下载显存计算脚本
 
 从 AI-fundamentals 获取计算脚本:
+
 ```bash
 # 如果已有克隆的 AI-fundamentals 仓库
 cp /Users/wangtianqing/Project/wechat/AI-fundamentals/09_inference_system/memory_calc/calculate_qwen3_memory.py .

@@ -40,6 +40,7 @@ def estimate_kv_cache(model_config: dict, seq_len: int, batch_size: int,
 ```
 
 **要求**:
+
 - 支持 FP16/FP8/INT8/INT4 四种精度
 - 支持 GQA 配置
 - 输出格式化表格
@@ -51,13 +52,14 @@ def estimate_kv_cache(model_config: dict, seq_len: int, batch_size: int,
 
 假设你需要在以下三种场景中部署 LLM 推理服务：
 
-| 场景 | 模型 | 平均 Prompt | 平均输出 | 并发 |
-|------|------|------------|---------|------|
-| A: 客服系统 | Qwen2.5-7B | 1500 tokens | 200 tokens | 50 |
-| B: 代码助手 | Qwen2.5-14B | 8000 tokens | 500 tokens | 20 |
-| C: 长文档分析 | Qwen2.5-72B | 30000 tokens | 1000 tokens | 5 |
+| 场景          | 模型        | 平均 Prompt  | 平均输出    | 并发 |
+| ------------- | ----------- | ------------ | ----------- | ---- |
+| A: 客服系统   | Qwen2.5-7B  | 1500 tokens  | 200 tokens  | 50   |
+| B: 代码助手   | Qwen2.5-14B | 8000 tokens  | 500 tokens  | 20   |
+| C: 长文档分析 | Qwen2.5-72B | 30000 tokens | 1000 tokens | 5    |
 
 对每个场景:
+
 1. 计算 FP16 下的 KV Cache 显存需求
 2. 计算使用 INT8 量化后的显存需求
 3. 如果使用 LMCache L1 (HBM) + L2 (CPU) 分层，应如何分配容量？
@@ -108,6 +110,7 @@ export LMCACHE_CONFIG='{
 ### 任务 5: 阅读 LMCache 或 KVBM 源码
 
 从 AI-fundamentals 中选择一个 KV Cache 系统源码分析：
+
 - **LMCache** (推荐): `09_inference_system/kv_cache/02_systems/lmcache/`
 - **KVBM** (进阶): `09_inference_system/kv_cache/02_systems/kvbm/`
 
@@ -129,11 +132,11 @@ export LMCACHE_CONFIG='{
 
 ## 评分标准
 
-| 维度 | 权重 | 要求 |
-|------|------|------|
-| 任务 1-3 完成度 | 60% | 估算器正确、场景分析完整 |
-| 分析质量 | 25% | 推荐方案有依据、有数据支撑 |
-| 进阶任务 | 15% | 完成至少一项进阶任务 |
+| 维度            | 权重 | 要求                       |
+| --------------- | ---- | -------------------------- |
+| 任务 1-3 完成度 | 60%  | 估算器正确、场景分析完整   |
+| 分析质量        | 25%  | 推荐方案有依据、有数据支撑 |
+| 进阶任务        | 15%  | 完成至少一项进阶任务       |
 
 ---
 

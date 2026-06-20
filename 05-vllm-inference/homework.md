@@ -14,23 +14,36 @@
 
 ## 基础任务 (必做)
 
-### 任务 1: vLLM 系统化性能评测
+### 任务 1: KV Cache 显存计算与分析
+
+使用 KV Cache 公式 `2 × L × H_kv × D × T × B`，完成以下计算：
+
+1. 计算 Qwen2.5-7B (L=28, H_kv=4, D=128, FP16) 在以下场景的 KV Cache 大小：
+   - 1 个请求, 4096 tokens
+   - 1 个请求, 32768 tokens (长上下文)
+   - 100 个并发请求, 各 2048 tokens
+2. 一张 A100 80GB 最多能并发服务多少个 Llama-3-8B 的请求 (模型参数 ~16GB, 每个请求 2048 tokens)?
+3. 如果将 KV Cache 从 FP16 量化到 FP8，同样的显存能服务多少倍的请求？INT8 呢？
+4. 为什么 GQA (Grouped Query Attention, H_kv < H_q) 能减少 KV Cache？以 Llama-3-70B (H_q=64, H_kv=8) 为例，GQA 相比 MHA (H_kv=64) 节省了多少倍 KV Cache？
+
+### 任务 2: vLLM 系统化性能评测
 
 使用 vLLM benchmark 工具，完成评测矩阵：
 
-| 变量 | 取值 |
-|------|------|
-| 模型 | Qwen2.5-0.5B, (Qwen2.5-7B 如显存允许) |
-| 输入长度 | 128, 512, 1024 |
-| 输出长度 | 128, 256 |
-| 请求速率 | 1, 4, 8, 16, 32 |
+| 变量     | 取值                                  |
+| -------- | ------------------------------------- |
+| 模型     | Qwen2.5-0.5B, (Qwen2.5-7B 如显存允许) |
+| 输入长度 | 128, 512, 1024                        |
+| 输出长度 | 128, 256                              |
+| 请求速率 | 1, 4, 8, 16, 32                       |
 
 绘制三张曲线图并分析:
+
 1. Throughput vs Request Rate — 找到系统饱和点
 2. TTFT P50/P95/P99 vs Request Rate — 分析延迟增长
 3. TPOT vs Input Length — 验证 TPOT 是否独立于 input length
 
-### 任务 2: nano-vllm Sequence 生命周期分析
+### 任务 3: nano-vllm Sequence 生命周期分析
 
 阅读 `nanovllm/engine/sequence.py` (84 行)，回答:
 
@@ -40,7 +53,7 @@
 4. `num_cached_tokens` 和 `num_scheduled_tokens` 的区别是什么？
 5. `last_block_num_tokens` 如何计算？在 `model_runner.py:prepare_decode()` 中如何被使用？
 
-### 任务 3: nano-vllm Scheduler 调度逻辑分析
+### 任务 4: nano-vllm Scheduler 调度逻辑分析
 
 阅读 `nanovllm/engine/scheduler.py` (93 行)，回答:
 
@@ -50,7 +63,7 @@
 4. `postprocess()` 中，`hash_blocks()` 调用在 `append_token()` 之前还是之后？为什么？
 5. 如果一个 Sequence 的 `num_completion_tokens == max_tokens`，它会进入什么状态？它的 Block 会被立即回收吗？
 
-### 任务 4: nano-vllm BlockManager 分析
+### 任务 5: nano-vllm BlockManager 分析
 
 阅读 `nanovllm/engine/block_manager.py` (121 行)，回答:
 
@@ -64,7 +77,7 @@
 
 ## 进阶任务 (选做)
 
-### 任务 5: nano-vllm PagedAttention 实现
+### 任务 6: nano-vllm PagedAttention 实现
 
 阅读 `nanovllm/layers/attention.py` + `engine/model_runner.py::prepare_prefill/ prepare_decode`，完成:
 
@@ -74,7 +87,7 @@
 4. 在 `attention.py` 中，Prefill 使用 `flash_attn_varlen_func`，Decode 使用 `flash_attn_with_kvcache` — 两个函数的区别是什么？（查看 flash_attn 文档）
 5. `store_kvcache_kernel` (Triton kernel) 中 `slot == -1` 的判断有什么作用？
 
-### 任务 6: nano-vllm 主循环与 CUDA Graph
+### 任务 7: nano-vllm 主循环与 CUDA Graph
 
 阅读 `nanovllm/engine/llm_engine.py` + `engine/model_runner.py::capture_cudagraph`，完成:
 
@@ -86,7 +99,7 @@
 
 ---
 
-## 任务 7 (选做): 扩展 nano-vllm
+## 任务 8 (选做): 扩展 nano-vllm
 
 为 nano-vllm 添加一个新功能 (任选一):
 
@@ -98,12 +111,13 @@
 
 ## 提交要求
 
-1. 提交性能评测脚本和结果数据 (含图表)
-2. 提交 nano-vllm 源码分析报告 (≤ 5 页)，包含：
-   - 任务 2-4 的所有问题的回答
+1. 提交 KV Cache 计算结果和分析
+2. 提交性能评测脚本和结果数据 (含图表)
+3. 提交 nano-vllm 源码分析报告 (≤ 5 页)，包含：
+   - 任务 3-5 的所有问题的回答
    - 关键代码片段的注释和分析
-   - (选做) 任务 5-7 的分析和代码
-3. 回答：
+   - (选做) 任务 6-8 的分析和代码
+4. 回答：
    - nano-vllm 的 1400 行代码中，你认为哪个模块最核心？为什么？
    - 如果将 nano-vllm 改造成在线推理服务（类似 vLLM API Server），需要增加哪些组件？
 
@@ -111,12 +125,13 @@
 
 ## 评分标准
 
-| 维度 | 权重 | 要求 |
-|------|------|------|
-| 任务 1 (压测) | 25% | 有完整的评测数据和图表分析 |
-| 任务 2-4 (源码分析) | 45% | 正确回答所有问题，分析深入 |
-| 文档质量 | 15% | 代码注释清晰、报告结构完整 |
-| 进阶任务 | 15% | 完成至少一项进阶任务 |
+| 维度                   | 权重 | 要求                       |
+| ---------------------- | ---- | -------------------------- |
+| 任务 1 (KV Cache 计算) | 15%  | 公式正确、计算准确、有分析 |
+| 任务 2 (压测)          | 20%  | 有完整的评测数据和图表分析 |
+| 任务 3-5 (源码分析)    | 35%  | 正确回答所有问题，分析深入 |
+| 文档质量               | 15%  | 代码注释清晰、报告结构完整 |
+| 进阶任务 (任务 6-8)    | 15%  | 完成至少一项进阶任务       |
 
 ---
 
