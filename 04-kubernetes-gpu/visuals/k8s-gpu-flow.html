@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K8s GPU 调度全链路可视化</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0f172a; color:#e2e8f0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:12px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#f8fafc; }
+.header p { color:#94a3b8; margin-top:2px; font-size:0.78em; }
+.main-wrap { max-width:1200px; width:100%; margin:0 auto; padding:0 10px 6px; display:flex; gap:12px; flex:1; min-height:0; align-items:stretch; }
+.main-left { flex:1; min-width:0; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.main-right { width:340px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { flex:1; min-height:0; overflow-y:auto; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:14px 16px; margin-bottom:8px; }
+.detail-panel .note { color:#94a3b8; font-size:0.8em; line-height:1.7; }
+.detail-panel .note strong { color:#f8fafc; }
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.78em; background:#1e293b; padding:1px 4px; border-radius:3px; color:#fbbf24; }
+.actions { display:flex; gap:6px; flex-wrap:wrap; flex-shrink:0; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; background:#334155; color:#cbd5e1; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.btn-next { background:#1e40af !important; color:#bfdbfe !important; }
+.btn-play { background:#15803d !important; color:#bbf7d0 !important; }
+svg { width:100%; height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>&#128736; K8s GPU 调度全链路</h1>
+  <p>模块 4 — Kubernetes 入门与 GPU 工作负载调度 &nbsp;|&nbsp; PPT 第 48 页 &nbsp;|&nbsp; 从 <code>kubectl apply</code> 到容器内 <code>nvidia-smi</code></p>
+</div>
+<div class="main-wrap">
+  <div class="main-left">
+    <svg id="main-svg" viewBox="0 0 900 730"></svg>
+  </div>
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        &#128161; <strong>K8s GPU 调度全链路</strong><br><br>
+        一个 GPU Pod 从 <code>kubectl apply</code> 到容器内 <code>nvidia-smi</code> 可见，经过 7 个步骤。<br>
+        ① kubectl apply → ② API Server → ③ Scheduler → ④ kubelet → ⑤ Device Plugin Allocate → ⑥ NVIDIA CTK hook → ⑦ 容器启动<br><br>
+        你只写了一句 <code>nvidia.com/gpu: 1</code>，K8s 自动完成剩下所有事。<br><br>
+        点击「下一步」逐步查看 →
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-next" onclick="nextStep()" id="btn-next">下一步 &#9654;</button>
+      <button class="btn-play" onclick="playAll()">&#9654; 自动</button>
+      <button onclick="resetAll()">&#8634; 重置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var step = 0, maxSteps = 7, playing = false;
+
+function nextStep() { if (!playing && step < maxSteps) { step++; draw(); } }
+function resetAll() { step = 0; draw(); }
+async function playAll() {
+  if (playing) return; playing = true;
+  document.getElementById("btn-next").disabled = true;
+  resetAll();
+  for (var i = 0; i < maxSteps; i++) {
+    await new Promise(function(r){setTimeout(r,1200)});
+    step++; draw();
+  }
+  playing = false;
+  document.getElementById("btn-next").disabled = false;
+}
+
+function R(x,y,w,h,f,s,sw,rx){sw=sw||0.5;rx=rx||2;return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+rx+'" fill="'+f+'" stroke="'+s+'" stroke-width="'+sw+'"/>';}
+function T(x,y,t,sz,clr,anc,wt){return '<text x="'+x+'" y="'+y+'" text-anchor="'+(anc||'middle')+'" font-size="'+sz+'" fill="'+clr+'" font-weight="'+(wt||'normal')+'" font-family="sans-serif">'+t+'</text>';}
+function A(x1,y1,x2,y2,c,sw){
+  var h='',dx=x2-x1,dy=y2-y1,len=Math.sqrt(dx*dx+dy*dy);if(len<1)return h;sw=sw||2.5;c=c||'#475569';
+  h+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+c+'" stroke-width="'+sw+'"/>';
+  var ux=dx/len,uy=dy/len,sz=10,px=x2-ux*sz,py=y2-uy*sz;
+  h+='<polygon points="'+x2+','+y2+' '+(px-uy*sz*0.5)+','+(py+ux*sz*0.5)+' '+(px+uy*sz*0.5)+','+(py-ux*sz*0.5)+'" fill="'+c+'"/>';
+  return h;
+}
+
+function comp(x,y,w,h,label,sub,stepNum,fg,bg,stroke,active){
+  var hh='';
+  // Step number badge on the left of box
+  if(stepNum){
+    var badgeR=13;
+    hh+=R(x-20,y+h/2-badgeR,badgeR*2,badgeR*2,active?bg:'#1e293b',stroke,active?2:0.8,badgeR);
+    hh+=T(x-20+badgeR,y+h/2+badgeR*0.35,stepNum,12,active?fg:'#64748b','middle','bold');
+  }
+  hh+=R(x,y,w,h,active?bg:'#1e293b',stroke,active?2.5:1,10);
+  hh+=T(x+w/2,y+h/2-4,label,13,active?fg:'#94a3b8','middle','bold');
+  if(sub)hh+=T(x+w/2,y+h/2+13,sub,10,active?fg:'#64748b','middle');
+  return hh;
+}
+
+function draw(){
+  var svg=document.getElementById("main-svg"),W=900,H=730,h='';
+  h+=R(0,0,W,H,'#1a1a2e','#1e293b',0,0);
+  h+=T(W/2,26,'K8s GPU 调度全链路 — kubectl apply -f gpu-pod.yaml',15,'#f8fafc','middle','bold');
+
+  // ── Layout constants ──
+  var cx=W/2, bW=300, bH=56, gap=32, crossGap=68;
+  var startY=50, spacing=bH+gap; // 88px regular
+  // Non-uniform y-positions: wider gap between CP (step ③) and Node (step ④)
+  var y=[];
+  y[0]=startY; y[1]=y[0]+spacing; y[2]=y[1]+spacing;
+  y[3]=y[2]+bH+crossGap;  // extra space separates Control Plane from Node
+  y[4]=y[3]+spacing; y[5]=y[4]+spacing; y[6]=y[5]+spacing;
+
+  // ── Section backgrounds ──
+  var pad=110;
+  // Control Plane group (steps ①-③)
+  var cpY1=y[0]-14, cpY2=y[2]+bH+14;
+  h+=R(cx-bW/2-pad,cpY1,bW+pad*2,cpY2-cpY1,'#0f172a','#1e3a8a',0.8,8);
+  h+=T(cx-bW/2-pad+12,cpY1+16,'Control Plane',10,'#3b82f6','start','bold');
+
+  // Node group (steps ④-⑥) — the node selected by Scheduler
+  var ndY1=y[3]-30, ndY2=y[5]+bH+14;
+  h+=R(cx-bW/2-pad,ndY1,bW+pad*2,ndY2-ndY1,'#0f172a','#166534',0.8,8);
+  h+=T(cx-bW/2-pad+12,ndY1+14,'Node — 被 Scheduler 选中的 gpu-worker-02',10,'#22c55e','start','bold');
+
+  // ── 7 components ──
+  var names=["kubectl apply","API Server","Scheduler","kubelet","Device Plugin","NVIDIA CTK","容器启动"];
+  var subs=[
+    "用户操作: kubectl apply -f gpu-pod.yaml",
+    "验证 YAML → 写入 etcd → Pod Pending",
+    "Filter: nvidia.com/gpu? → Score → Bind",
+    "watch 到 Pod → 调 CRI + Device Plugin",
+    "gRPC Allocate → 返回 GPU 环境变量",
+    "OCI prestart hook: mknod + mount 注入设备驱动",
+    "容器内 nvidia-smi 可见 GPU ✓"
+  ];
+  var fgs=["#bfdbfe","#99f6e4","#fed7aa","#d8b4fe","#bbf7d0","#fca5a5","#86efac"];
+  var bgs=["#1e3a8a","#0f766e","#7c2d12","#2e1065","#14532d","#7f1d1d","#14532d"];
+  var stks=["#3b82f6","#14b8a6","#f97316","#a855f7","#22c55e","#ef4444","#22c55e"];
+  var nums=["①","②","③","④","⑤","⑥","⑦"];
+
+  for(var i=0;i<7;i++){
+    h+=comp(cx-bW/2,y[i],bW,bH,names[i],subs[i],nums[i],fgs[i],bgs[i],stks[i],step>i);
+    // Arrow to next component
+    if(step>i && i<6) h+=A(cx,y[i]+bH,cx,y[i+1],stks[i+1],2);
+  }
+
+  // ── Multi-node candidates (step ③: Scheduler evaluates nodes) ──
+  if(step>=3){
+    var candY=y[2]+bH+28, candH=30, candW=84;
+    var cands=[
+      {x:cx-126, name:'gpu-worker-01', gpu:'GPU×8', sel:false, ok:true},
+      {x:cx,     name:'gpu-worker-02', gpu:'GPU×8', sel:true,  ok:true},
+      {x:cx+126, name:'gpu-worker-03', gpu:'GPU×0', sel:false, ok:false}
+    ];
+    // Divider line: Scheduler bottom → candidate row
+    h+='<line x1="'+cx+'" y1="'+ (y[2]+bH) +'" x2="'+cx+'" y2="'+ (candY-4) +'" stroke="#f97316" stroke-width="1" stroke-dasharray="3,3"/>';
+    for(var ci=0;ci<cands.length;ci++){
+      var cd=cands[ci], cxC=cd.x, cyC=candY;
+      var fill=cd.sel?'#14532d':(cd.ok?'#1e293b':'#3b1212');
+      var stroke=cd.sel?'#22c55e':(cd.ok?'#475569':'#7f1d1d');
+      var txtClr=cd.sel?'#bbf7d0':(cd.ok?'#94a3b8':'#fca5a5');
+      h+=R(cxC-candW/2,cyC,candW,candH,fill,stroke,cd.sel?2:1,6);
+      h+=T(cxC,cyC+12,cd.name,9,txtClr,'middle','bold');
+      h+=T(cxC,cyC+24,cd.gpu+(cd.sel?' ✓':(cd.ok?'':' ✗')),8,txtClr,'middle');
+      // Dashed connect from Scheduler
+      if(step>=3){
+        var sx=cx, sy=y[2]+bH;
+        h+='<line x1="'+sx+'" y1="'+sy+'" x2="'+cxC+'" y2="'+cyC+'" stroke="'+stroke+'" stroke-width="0.8" stroke-dasharray="2,4"/>';
+      }
+    }
+    // Arrow from selected candidate down to kubelet
+    if(step>=4){
+      var sel=cands[1];
+      h+=A(sel.x,candY+candH,cx,y[3],'#22c55e',2);
+    }
+    // Label above candidates
+    h+=T(cx,candY-8,'Scheduler 评估候选节点 → Filter + Score → 选中 gpu-worker-02',9,'#f97316','middle');
+  }
+
+  // ── Between-component sub-flow labels (steps ④→⑤→⑥) ──
+  if(step>=4){
+    h+=T(cx,y[3]+bH+16,'gRPC Allocate()',8,'#a855f7','middle');
+    h+=T(cx,y[4]+bH+16,'环境变量 / CDI Device',8,'#22c55e','middle');
+    h+=T(cx,y[5]+bH+16,'OCI hook → 注入完成',8,'#ef4444','middle');
+  }
+
+  // ── Right-side callout: auto-sized box that fits its text ──
+  var callouts=[
+    {n:3, t:'声明式入口', d:['用户只需声明 nvidia.com/gpu: 1','K8s 自动完成: 发现→调度→注入']},
+    {n:3, t:'唯一真相来源', d:['认证 + 鉴权 + 准入控制','写入 etcd 持久化','Pod.Status = Pending']},
+    {n:3, t:'智能调度三阶段', d:['Filter: 排除无GPU/资源不足节点','Score: GPU 拓扑感知打分','Bind: 选出最优节点 → 绑定']},
+    {n:3, t:'节点工头 kubelet', d:['watch API Server → 发现绑定','调 CRI 创建容器','调 Device Plugin Allocate()']},
+    {n:3, t:'GPU 分配 Allocate', d:['NVML 查询 → 选可用 GPU','返回: NVIDIA_VISIBLE_DEVICES','K8s 1.31+: 改用 CDI Device']},
+    {n:3, t:'设备注入 OCI Hook', d:['mknod /dev/nvidia* 设备文件','mount --bind 驱动库 (libcuda.so)','设置 LD_LIBRARY_PATH']},
+    {n:3, t:'GPU 就绪! ✓', d:['/dev/nvidia0 可见','libcuda.so 可加载','nvidia-smi 正常输出']}
+  ];
+
+  var cxR=cx+bW/2+48;
+  var titleH=16, lineH=14, padTop=12, padBot=10;
+
+  if(step>=1 && step<=7){
+    var co=callouts[step-1], cy=y[step-1];
+    // Calculate box height from content
+    var boxH = padTop + titleH + co.n*lineH + padBot;
+    var boxY = cy + bH/2 - boxH/2;  // vertically centered on component
+
+    // Connecting line
+    h+='<line x1="'+ (cx+bW/2) +'" y1="'+ (cy+bH/2) +'" x2="'+ cxR +'" y2="'+ (cy+bH/2) +'" stroke="'+stks[step-1]+'" stroke-width="1" stroke-dasharray="4,3"/>';
+    // Box
+    h+=R(cxR,boxY,200,boxH,'#1e293b',stks[step-1],1.5,6);
+    // Title
+    h+=T(cxR+10,boxY+padTop+11,co.t,11,fgs[step-1],'start','bold');
+    // Detail lines
+    for(var dl=0;dl<co.n;dl++){
+      h+=T(cxR+10,boxY+padTop+titleH+4+dl*lineH+9,co.d[dl],9,'#94a3b8','start');
+    }
+  }
+
+  // ── Bottom: timing bar ──
+  if(step>=7){
+    var barY=H-44, barW=280, barX=cx-barW/2;
+    h+=R(barX,barY,barW,22,'#0f172a','#22c55e',1,6);
+    h+=T(cx,barY+15,'全链路耗时: 1-5 秒 (①-③ Control Plane <1s + ④-⑦ Node 1-3s)',9,'#bbf7d0','middle');
+  } else {
+    h+=T(W/2,H-18,'Pod YAML 只需声明:  nvidia.com/gpu: 1  —  K8s 自动完成以上 7 步','11','#64748b','middle');
+  }
+
+  var descs=[
+    "<strong>K8s GPU 调度全链路</strong><br><br>一个 GPU Pod 从 <code>kubectl apply</code> 到容器内 <code>nvidia-smi</code> 可见，经过 <strong>7 个步骤、4 类组件</strong>。<br><br>你只写了一句 <code>nvidia.com/gpu: 1</code> — K8s 怎么知道去哪找 GPU？<br><br>点击「下一步」逐步查看每个组件做了什么 →",
+    "<strong>Step ①: kubectl apply — 一切从这里开始</strong><br><br>用户执行 <code>kubectl apply -f gpu-pod.yaml</code>。<br><br>YAML 中声明 <code>nvidia.com/gpu: 1</code> —— 这是一个 <strong>Extended Resource</strong>，不是 K8s 内置的 CPU/Memory。<br><br>请求通过 HTTPS REST API 发送给 <strong>API Server</strong>。<br><br><em>这就是声明式的入口 — 你只管声明需要 GPU，不管怎么实现。</em>",
+    "<strong>Step ②: API Server — 唯一真相来源</strong><br><br>API Server 收到请求后依次执行:<br><br>① <strong>认证 (AuthN)</strong>: 你是谁？验证证书/Token<br>② <strong>鉴权 (AuthZ)</strong>: 你有没有权限创建 Pod？(RBAC)<br>③ <strong>准入控制 (Admission)</strong>: 合规检查 + 默认值注入<br>④ <strong>写入 etcd</strong>: Pod 对象持久化到 etcd<br><br>Pod 状态 = <code>Pending</code>。<br>Scheduler 通过 watch 机制感知到新 Pod (未绑定 Node) → 开始调度。",
+    "<strong>Step ③: Scheduler — Filter → Score → Bind</strong><br><br>三个阶段，逐层筛选最优节点:<br><br><strong>Filter (过滤)</strong>: 遍历所有 Node，淘汰不合格的:<br>• <code>nvidia.com/gpu</code> allocatable ≥ 1?<br>• Node Ready? MemoryPressure?<br>• Node Selector / Affinity 匹配?<br>• Taint 可容忍?<br><br><strong>Score (打分)</strong>: 对候选节点排名:<br>• LeastAllocated / MostAllocated 策略<br>• GPU 拓扑感知 (同 PCIe Switch 高分)<br><br><strong>Bind (绑定)</strong>: 最高分节点中标 → Pod.nodeName 被设置。<br><br>Scheduler 能识别 GPU 是因为 Device Plugin 已将 GPU 数量上报到 Node Status。",
+    "<strong>Step ④: kubelet — 节点的「工头」</strong><br><br>目标节点的 kubelet watch 到新 Pod 绑定到自己:<br><br>① 读取 Pod Spec → 发现声明了 <code>nvidia.com/gpu: 1</code><br>② 通过 Unix Socket gRPC 调用 <strong>Device Plugin.Allocate()</strong><br>③ 同时通过 CRI 调用 Container Runtime 准备容器<br><br>「kubelet 自己不操作 GPU — 它让 Device Plugin 分配设备，让 CRI 创建容器，它只负责协调。」",
+    "<strong>Step ⑤: Device Plugin — Allocate 分配 GPU</strong><br><br>NVIDIA Device Plugin 实现 <code>Allocate()</code> gRPC 接口:<br><br>① 通过 NVML 查询本节点 GPU 状态<br>② 选择一张可用的 GPU (如 GPU-0)<br>③ 返回 <strong>AllocateResponse</strong>:<br>&nbsp;&nbsp;<code>env: NVIDIA_VISIBLE_DEVICES=GPU-&lt;uuid&gt;</code><br>&nbsp;&nbsp;<code>env: NVIDIA_DRIVER_CAPABILITIES=compute,utility</code><br>&nbsp;&nbsp;<code>mount: /dev/nvidia0</code>, <code>/dev/nvidiactl</code>...<br><br>K8s 1.31+: 不再传环境变量，改用 <strong>CDI Device</strong> 名称 (标准化设备描述)。",
+    "<strong>Step ⑥: NVIDIA Container Toolkit — 设备注入</strong><br><br>CRI (containerd/cri-o) 创建容器时，OCI runtime 触发 <strong>prestart hook</strong>:<br><br>① <strong>mknod</strong> — 创建 GPU 设备文件到容器:<br>&nbsp;&nbsp;<code>/dev/nvidia0</code>, <code>/dev/nvidiactl</code>, <code>/dev/nvidia-uvm</code>...<br>② <strong>mount --bind</strong> — 挂载驱动库到容器:<br>&nbsp;&nbsp;<code>libcuda.so</code>, <code>libnvidia-ml.so</code>, <code>libcudart.so</code>...<br>③ 设置 <code>LD_LIBRARY_PATH</code><br><br>「容器里原本什么都没有 — CTK 的 OCI hook 在这时把 GPU 设备和驱动 '塞' 进去。」",
+    "<strong>Step ⑦: 容器启动 — GPU 就绪!</strong><br><br>OCI hook 执行完毕 → 容器进程启动 → 验证:<br><br>• <code>/dev/nvidia0</code> 可见 ✓<br>• <code>libcuda.so</code> 可加载 ✓<br>• <code>nvidia-smi</code> 输出 GPU 信息 ✓<br><br><strong>全链路耗时 (典型值):</strong><br>• ① kubectl → ② API Server: &lt;100ms<br>• ② API Server → etcd → ③ Scheduler: &lt;500ms<br>• ③ Scheduler Bind → ④ kubelet: &lt;100ms<br>• ④→⑤→⑥→⑦ 容器创建 + 设备注入: 1-3s<br>• <strong>总计 1-5 秒</strong><br><br>「你只写了一句 <code>nvidia.com/gpu: 1</code><br>K8s 在几秒内自动完成剩下所有事。」"
+  ];
+  document.getElementById("detail-panel").innerHTML='<div class="note">'+descs[step]+'</div>';
+  svg.innerHTML=h;
+}
+draw();
+</script>
+</body>
+</html>

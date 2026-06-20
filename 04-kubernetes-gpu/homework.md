@@ -1,184 +1,97 @@
 # 模块 4：Kubernetes 入门与 GPU 工作负载调度 — 课后练习
 
-## 题目：K8s GPU 作业队列与多卡调度
-
-### 目标
-
-在 K8s 集群中配置 Kueue 作业队列，实现 GPU 资源的排队和优先级调度。然后设计一个多 GPU 的调度场景，理解拓扑感知调度的价值。
+## 题目：K8s GPU 调度实战与分析
 
 ### 截止时间
 
-下次课前 (一周)
+模块 5 课前
 
 ---
 
-## 基础任务 (必做)
+## 任务 1: K8s 基础练习 (必做)
 
-### 任务 1: 配置 Kueue 作业队列
+在本地 minikube/k3s/kind 集群上完成以下操作，截图记录每一步：
 
-安装 Kueue 并配置 GPU 资源的作业队列：
+1. 创建 Namespace `gpu-homework`
+2. 在该 Namespace 中创建一个 Deployment（镜像 `nginx:alpine`，3 副本）
+3. 创建一个 Service（类型 ClusterIP）暴露该 Deployment
+4. 扩容到 5 副本 → 缩容到 2 副本
+5. 执行一次滚动更新（改镜像 tag 为 `nginx:1.25-alpine`）
+6. 用 `kubectl describe` 查看 Deployment 的 Events，解释你看到了什么
 
-```yaml
-# resource-flavor.yaml
-apiVersion: kueue.x-k8s.io/v1beta1
-kind: ResourceFlavor
-metadata:
-  name: default-gpu-flavor
----
-# cluster-queue.yaml
-apiVersion: kueue.x-k8s.io/v1beta1
-kind: ClusterQueue
-metadata:
-  name: gpu-cluster-queue
-spec:
-  namespaceSelector: {}
-  resourceGroups:
-  - coveredResources: ["cpu", "memory", "nvidia.com/gpu"]
-    flavors:
-    - name: default-gpu-flavor
-      resources:
-      - name: "cpu"
-        nominalQuota: 16
-      - name: "memory"
-        nominalQuota: 32Gi
-      - name: "nvidia.com/gpu"
-        nominalQuota: 1    # 只有 1 张 GPU 的配额
----
-# local-queue.yaml
-apiVersion: kueue.x-k8s.io/v1beta1
-kind: LocalQueue
-metadata:
-  name: gpu-queue
-  namespace: default
-spec:
-  clusterQueue: gpu-cluster-queue
-```
+提交: 每一步的 kubectl 命令 + 关键输出截图。
 
-创建两个 GPU Job，观察排队行为：
+## 任务 2: K8s GPU 设备管理机制分析 (必做)
 
-```yaml
-# job-1.yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: gpu-job-1
-  labels:
-    kueue.x-k8s.io/queue-name: gpu-queue
-spec:
-  suspend: true  # Kueue 会接管调度
-  parallelism: 1
-  template:
-    spec:
-      containers:
-      - name: job
-        image: nvidia/cuda:12.4.0-base-ubuntu22.04
-        command: ["nvidia-smi"]
-        resources:
-          limits:
-            nvidia.com/gpu: 1
-      restartPolicy: Never
-```
+阅读 AI-fundamentals `04_cloud_native_ai_platform/k8s/02_nvidia_k8s_device_plugin_analysis.md`，回答：
 
-```bash
-# 提交两个 Job
-kubectl apply -f job-1.yaml
-# 复制 job-1.yaml → job-2.yaml，改名为 gpu-job-2
-kubectl apply -f job-2.yaml
+1. Device Plugin 的 `ListAndWatch` 和 `Allocate` 接口各自做什么？画出它们的调用时序图。
+2. 如果某个节点的 GPU 被所有 Pod 占满，新来的 Pod 声明 `nvidia.com/gpu: 1` 会发生什么？结合调度器流程解释。
+3. DRA 相比 Device Plugin 的核心改进是什么？从**分配时机**和**拓扑感知**两个维度分析。
+4. 为什么说 ResourceClaim 之于 GPU 类似于 PVC 之于存储？找到共同点和差异点。
 
-# 观察状态 (一个 Running，一个 Suspended/Pending)
-kubectl get jobs
-kubectl get workload -o wide  # Kueue 的 Workload 对象
-```
+## 任务 3: GPU 调度策略设计 (必做)
 
-记录实验过程: 哪个 Job 先运行、为什么、队列中的等待时间。
+假设你有以下 GPU 集群:
 
-### 任务 2: 探索 GPU 拓扑感知
+- 4 个节点，每个节点 8 张 A100
+- 节点 1-2 的 GPU 通过 NVSwitch 全互联 (同一域)
+- 节点 3-4 的 GPU 通过 NVSwitch 全互联 (另一域)
+- 跨节点的 GPU 通过 InfiniBand 互联
 
-在有多张 GPU 的节点上运行：
+你需要运行以下工作负载:
 
-```bash
-# 查看 GPU 拓扑
-nvidia-smi topo -m
+- **Job A**: 分布式训练 (8 卡，TP=8，必须在同一 NVSwitch 域)
+- **Job B**: 推理服务 (2 卡，无特殊拓扑要求)
+- **Job C**: 推理服务 (2 卡，无特殊拓扑要求)
 
-# 记录输出，回答:
-# 1. 哪些 GPU 对之间是 PIX (同 PCIe Switch)?
-# 2. 哪些 GPU 对之间是 SYS (跨 NUMA Node)?
-# 3. 如果要运行一个 2 卡训练任务，应该选哪两张 GPU?
-```
+请回答:
 
-如果只有单 GPU 节点，使用以下命令模拟理解：
-
-```bash
-# 查看 PCIe 拓扑
-lspci -t -v | grep -i nvidia
-
-# 查看 NUMA 拓扑
-numactl --hardware
-```
+1. 为 Job A/B/C 设计调度方案，说明每个 Job 应该调度到哪些节点、为什么。
+2. 如果使用 Kueue，如何配置 ResourceFlavor 和 ClusterQueue 来区分两个 NVSwitch 域？
+3. 如果 Job A 还在运行，Job B 和 C 先后到达，K8s 默认调度器会怎么放置它们？如果使用 Binpack 策略呢？
 
 ---
 
 ## 进阶任务 (选做)
 
-### 任务 3: 实现弹性 GPU 调度
+### 任务 4: 部署 Kueue 并测试
 
-使用 KEDA (Kubernetes Event-Driven Autoscaling) 或 HPA，基于 GPU 利用率自动扩缩容推理服务：
+在 K8s 集群中部署 Kueue，创建:
 
-```bash
-# 安装 KEDA
-kubectl apply --server-side -f https://github.com/kedacore/keda/releases/latest/download/keda.yaml
+- 一个 ResourceFlavor (你的 GPU 节点组)
+- 一个 ClusterQueue (配额: 2 GPU)
+- 提交 3 个 Job (每个声明 1 GPU)，观察第 3 个 Job 的排队行为
 
-# 配置基于 Prometheus GPU 指标的 ScaledObject
-```
+### 任务 5: DRA 实验
 
-设计目标: 当 GPU 利用率 > 70% 时扩容，< 30% 时缩容。
-
-### 任务 4: DRA 实验
-
-如果 K8s 版本 ≥ 1.31，尝试 DRA 的 GPU 动态分配：
-
-```yaml
-apiVersion: resource.k8s.io/v1alpha3
-kind: ResourceClaim
-metadata:
-  name: gpu-claim
-spec:
-  devices:
-    requests:
-    - name: gpu
-      deviceClassName: nvidia-gpu
-      count: 1
-```
+如果 K8s 版本 ≥ 1.31，尝试创建 ResourceClaim 并部署引用 Claim 的 Pod。记录 Claim 的状态变化过程。
 
 ---
 
 ## 提交要求
 
-1. 提交 Kueue 配置文件和实验过程截图
-2. 提交 GPU 拓扑分析报告 (含 `nvidia-smi topo -m` 输出解读)
-3. 回答以下问题 (≤ 1 页):
-   - Device Plugin 和 DRA 的本质区别是什么？
-   - 为什么 GPU 资源不能像 CPU 一样 oversubscribe？
-   - Gang Scheduling 在分布式训练中为什么重要？
-   - (选做) KEDA 自动扩缩容的实现思路
+1. 任务 1: 命令 + 截图
+2. 任务 2: 分析回答 (≤ 2 页)
+3. 任务 3: 调度方案设计 (≤ 1 页)
+4. (选做) 任务 4 或 5
 
 ---
 
 ## 评分标准
 
-| 维度 | 权重 | 要求 |
-|------|------|------|
-| 任务 1-2 完成度 | 60% | 成功配置 Kueue 并观察排队行为，完成拓扑分析 |
-| 分析深度 | 20% | 问题回答有深度、有依据 |
-| 文档质量 | 10% | 截图清晰、描述完整 |
-| 进阶任务 | 10% | 完成至少一项进阶任务 |
+| 维度              | 权重 | 要求                      |
+| ----------------- | ---- | ------------------------- |
+| 任务 1 (K8s 基础) | 30%  | 6 步操作正确完成          |
+| 任务 2 (机制分析) | 30%  | 4 题回答准确 + 时序图正确 |
+| 任务 3 (调度设计) | 25%  | 方案合理有依据            |
+| 文档质量          | 10%  | 截图清晰、描述完整        |
+| 进阶任务          | 5%   | 完成至少一项              |
 
 ---
 
 ## 参考资料
 
-- AI-fundamentals: `04_cloud_native_ai_platform/k8s/02_nvidia_k8s_device_plugin_analysis.md`
-- AI-fundamentals: `04_cloud_native_ai_platform/k8s/03_kueue_hami_integration.md`
-- AI-fundamentals: `04_cloud_native_ai_platform/k8s/04_lws_intro.md`
+- AI-fundamentals: `04_cloud_native_ai_platform/k8s/` 全部文件
+- [Kubernetes DRA Documentation](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/)
 - [Kueue Documentation](https://kueue.sigs.k8s.io/docs/)
-- [NVIDIA Device Plugin](https://github.com/NVIDIA/k8s-device-plugin)

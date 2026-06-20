@@ -1,7 +1,7 @@
 # 云原生 AI 基础设施：原理与实践 — 课程设计
 
 > **面向对象**: 高年级本科生
-> **课时安排**: 8 次课 × 90 分钟 = 12 学时
+> **课时安排**: 8 次课 × 90 分钟 (模块 4 扩展至 120 分钟) ≈ 12.5 学时
 > **课程材料来源**: [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals) | [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev)
 
 ---
@@ -14,17 +14,17 @@
 
 ## 课程目录
 
-| 模块 | 主题                                    | 状态     | 核心内容                                                |
-| ---- | --------------------------------------- | -------- | ------------------------------------------------------- |
-| 1    | Linux 基础与容器技术入门                | ✔ 已评审 | Namespace/Cgroup/OverlayFS、Docker 分层                 |
-| 2    | GPU 硬件架构与 CUDA 编程入门            | ✔ 已评审 | SM/Tensor Core/HBM/NVLink、CUDA Kernel、Tiling          |
-| 2b   | GPU 内存管理 (高级)                     | ✔ 已评审 | Pinned/Pageable DMA、显存碎片化、跨进程共享             |
-| 3    | GPU 虚拟化与容器化实践                  | ✔ 已评审 | MIG/Time-Slicing/HAMi、LD_PRELOAD CUDA 拦截、NVIDIA CTK |
-| 4    | Kubernetes 入门与 GPU 工作负载调度      | 待评审   | Device Plugin、DRA、Kueue                               |
-| 5    | 大模型推理框架入门：以 vLLM 为例        | 待评审   | PagedAttention、Continuous Batching                     |
-| 6    | 大模型推理加速实践：KV Cache 原理与优化 | 待评审   | KV Cache、LMCache、量化压缩                             |
-| 7    | 云原生 AI 推理基础设施进阶：构建 MaaS   | 待评审   | AI 网关、路由、弹性伸缩                                 |
-| 8    | 课程总结与 AI Infra 前沿展望            | 待评审   | Agent Infra、AI Native                                  |
+| 模块 | 主题                                    | 状态     | 核心内容                                                 |
+| ---- | --------------------------------------- | -------- | -------------------------------------------------------- |
+| 1    | Linux 基础与容器技术入门                | ✔ 已评审 | Namespace/Cgroup/OverlayFS、Docker 分层                  |
+| 2    | GPU 硬件架构与 CUDA 编程入门            | ✔ 已评审 | SM/Tensor Core/HBM/NVLink、CUDA Kernel、Tiling           |
+| 2b   | GPU 内存管理 (高级)                     | ✔ 已评审 | Pinned/Pageable DMA、显存碎片化、跨进程共享              |
+| 3    | GPU 虚拟化与容器化实践                  | ✔ 已评审 | MIG/Time-Slicing/HAMi、LD_PRELOAD CUDA 拦截、NVIDIA CTK  |
+| 4    | Kubernetes 入门与 GPU 工作负载调度      | ✔ 已评审 | 120min/52页, K8s基础+Device Plugin+DRA+Kueue+GPU调度实战 |
+| 5    | 大模型推理框架入门：以 vLLM 为例        | 待评审   | PagedAttention、Continuous Batching                      |
+| 6    | 大模型推理加速实践：KV Cache 原理与优化 | 待评审   | KV Cache、LMCache、量化压缩                              |
+| 7    | 云原生 AI 推理基础设施进阶：构建 MaaS   | 待评审   | AI 网关、路由、弹性伸缩                                  |
+| 8    | 课程总结与 AI Infra 前沿展望            | 待评审   | Agent Infra、AI Native                                   |
 
 ## 目录结构
 
@@ -90,7 +90,20 @@ ai-infra-course/
 │   ├── lab-environment.md
 │   ├── syllabus.md                  #   (gitignored)
 │   └── ppt-outline.md               #   (gitignored)
-├── 04-kubernetes-gpu/
+├── 04-kubernetes-gpu/                   # 模块 4: K8s 入门与 GPU 调度
+│   ├── README.md
+│   ├── code/
+│   │   ├── README.md
+│   │   ├── 01_nginx_demo.yaml           #   Nginx Deployment + Service
+│   │   ├── 02_gpu_pod.yaml              #   GPU Pod — nvidia-smi 测试
+│   │   └── 03_gpu_deploy.yaml           #   GPU Deployment — 生产级工作负载
+│   ├── visuals/
+│   │   └── k8s-gpu-flow.html            #   GPU 调度全链路 7 步交互动画
+│   ├── hands-on-exercise.md
+│   ├── homework.md
+│   ├── lab-environment.md
+│   ├── syllabus.md                      #   (gitignored)
+│   └── ppt-outline.md                   #   (gitignored)
 ├── 05-vllm-inference/
 ├── 06-kvcache-optimization/
 ├── 07-maas-infra/
@@ -109,10 +122,12 @@ ai-infra-course/
 
 ## 实验环境
 
-| 模块          | 运行方式                                                                                            |
-| ------------- | --------------------------------------------------------------------------------------------------- |
-| 模块 1 (Bash) | 直接执行 `.sh` 脚本，需要 `sudo`                                                                    |
-| 模块 2 (CUDA) | 本地 `make all && make run`，或使用 `bash cuda-docker all`（Docker 镜像需包含 CUDA Toolkit + nvcc） |
+| 模块              | 运行方式                                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------- |
+| 模块 1 (Bash)     | 直接执行 `.sh` 脚本，需要 `sudo`                                                                    |
+| 模块 2 (CUDA)     | 本地 `make all && make run`，或使用 `bash cuda-docker all`（Docker 镜像需包含 CUDA Toolkit + nvcc） |
+| 模块 3 (C/LD_PRELOAD) | `gcc -shared -fPIC -o libmymalloc.so 01_mymalloc.c -ldl`，`LD_PRELOAD=./libmymalloc.so <cmd>`   |
+| 模块 4 (K8s)      | minikube / k3s / kind 任选，`kubectl apply -f code/*.yaml`，GPU 实验需 NVIDIA Device Plugin        |
 
 ## 材料来源
 

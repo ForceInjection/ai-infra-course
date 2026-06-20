@@ -1,0 +1,37 @@
+# 模块 4：K8s 基础 — Nginx Deployment + Service
+# 用法: kubectl apply -f 01_nginx_demo.yaml
+# 对应 PPT 第 16 页 [动手] K8s 初体验
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-demo
+  labels:
+    app: nginx-demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-demo
+  template:
+    metadata:
+      labels:
+        app: nginx-demo
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-demo
+spec:
+  selector:
+    app: nginx-demo
+  type: NodePort
+  ports:
+  - port: 80
+    targetPort: 80

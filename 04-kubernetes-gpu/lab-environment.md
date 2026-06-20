@@ -4,22 +4,22 @@
 
 ### 硬件要求
 
-| 项目 | 最低配置 | 推荐配置 |
-|------|---------|---------|
-| CPU | 8 核 | 16 核+ |
-| 内存 | 16 GB | 32 GB+ |
-| 磁盘 | 100 GB SSD | 200 GB+ |
-| GPU | NVIDIA GPU ×1 (可选) | 多卡 NVIDIA GPU (用于多卡调度实验) |
+| 项目 | 最低配置             | 推荐配置                           |
+| ---- | -------------------- | ---------------------------------- |
+| CPU  | 8 核                 | 16 核+                             |
+| 内存 | 16 GB                | 32 GB+                             |
+| 磁盘 | 100 GB SSD           | 200 GB+                            |
+| GPU  | NVIDIA GPU ×1 (可选) | 多卡 NVIDIA GPU (用于多卡调度实验) |
 
 ### 软件要求
 
-| 软件 | 版本 | 用途 |
-|------|------|------|
-| Kubernetes | ≥ 1.28 | 容器编排 |
-| kubectl | ≥ 1.28 | K8s CLI |
-| Helm | ≥ 3.12 | 包管理 |
-| NVIDIA Device Plugin | latest | GPU 设备管理 |
-| HAMi | ≥ 2.4 (可选) | GPU 虚拟化 |
+| 软件                 | 版本         | 用途         |
+| -------------------- | ------------ | ------------ |
+| Kubernetes           | ≥ 1.28       | 容器编排     |
+| kubectl              | ≥ 1.28       | K8s CLI      |
+| Helm                 | ≥ 3.12       | 包管理       |
+| NVIDIA Device Plugin | latest       | GPU 设备管理 |
+| HAMi                 | ≥ 2.4 (可选) | GPU 虚拟化   |
 
 ---
 
@@ -147,6 +147,7 @@ kubectl delete pod gpu-test
 ## 常见问题
 
 ### Q: GPU Pod 一直 Pending
+
 ```bash
 # 查看调度事件
 kubectl describe pod <pod-name> | grep -A 5 Events
@@ -158,6 +159,7 @@ kubectl describe pod <pod-name> | grep -A 5 Events
 ```
 
 ### Q: 容器内看不到 GPU
+
 ```bash
 # 检查环境变量
 kubectl exec <pod> -- env | grep NVIDIA
@@ -167,6 +169,7 @@ kubectl exec <pod> -- nvidia-smi
 ```
 
 ### Q: k3s 节点 GPU 未上报
+
 ```bash
 # 确认 NVIDIA Container Toolkit 已安装
 sudo apt install -y nvidia-container-toolkit

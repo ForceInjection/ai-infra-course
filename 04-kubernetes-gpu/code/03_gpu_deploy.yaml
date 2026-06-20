@@ -1,0 +1,35 @@
+# 模块 4：GPU Deployment — 生产级 GPU 工作负载
+# 用法: kubectl apply -f 03_gpu_deploy.yaml
+# 对应 PPT 第 45-46 页 [动手 1 + 2]
+# 实验: kubectl scale deployment gpu-inference --replicas=3 → 观察资源争抢
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-inference
+  labels:
+    app: gpu-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gpu-inference
+  template:
+    metadata:
+      labels:
+        app: gpu-inference
+    spec:
+      containers:
+      - name: cuda
+        image: nvidia/cuda:12.4.0-base-ubuntu22.04
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          echo "=== GPU Device Info ==="
+          nvidia-smi
+          echo "=== Environment ==="
+          env | grep NVIDIA
+          echo "GPU Pod is running. Sleeping..."
+          sleep 3600
+        resources:
+          limits:
+            nvidia.com/gpu: 1
