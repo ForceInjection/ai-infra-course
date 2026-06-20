@@ -18,6 +18,7 @@
 | ---- | --------------------------------------- | -------- | ---------------------------------------------- |
 | 1    | Linux 基础与容器技术入门                | ✔ 已评审 | Namespace/Cgroup/OverlayFS、Docker 分层        |
 | 2    | GPU 硬件架构与 CUDA 编程入门            | ✔ 已评审 | SM/Tensor Core/HBM/NVLink、CUDA Kernel、Tiling |
+| 2b   | GPU 内存管理 (高级)                     | ✔ 已评审 | Pinned/Pageable DMA、显存碎片化、跨进程共享    |
 | 3    | GPU 虚拟化与容器化实践                  | 待评审   | HAMi、NVIDIA Container Toolkit                 |
 | 4    | Kubernetes 入门与 GPU 工作负载调度      | 待评审   | Device Plugin、DRA、Kueue                      |
 | 5    | 大模型推理框架入门：以 vLLM 为例        | 待评审   | PagedAttention、Continuous Batching            |
@@ -69,6 +70,13 @@ ai-infra-course/
 │   ├── lab-environment.md
 │   ├── syllabus.md                  #   (gitignored)
 │   └── ppt-outline.md               #   (gitignored)
+├── 02b-gpu-memory/                   # 模块 2b: GPU 内存管理 (高级)
+│   ├── README.md
+│   ├── code/
+│   │   ├── README.md
+│   │   └── 01_dma_bandwidth.py
+│   └── visuals/
+│       └── gpu-memory-visual.html
 ├── 03-gpu-virtualization/
 ├── 04-kubernetes-gpu/
 ├── 05-vllm-inference/
