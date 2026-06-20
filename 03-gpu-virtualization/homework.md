@@ -8,44 +8,19 @@
 
 ---
 
-## 任务 1: 扩展 LD_PRELOAD hook (必做)
+## 任务 1: 从 malloc hook 到 CUDA API 拦截 (必做)
 
-在课堂 `malloc` hook 的基础上，增加**配额限制**逻辑：
+课堂的 `01_mymalloc.c` 演示了 `LD_PRELOAD` → hook `malloc` → 配额检查的基本原理。HAMi 把这个思路搬到了 CUDA API 上。阅读以下材料：
 
-```c
-// quota_malloc.c
-#define _GNU_SOURCE
-#include <stdio.h>
-#include <dlfcn.h>
-#include <stdlib.h>
+- 课堂代码: `code/01_mymalloc.c`
+- HAMi 参考: AI-fundamentals `04_cloud_native_ai_platform/gpu_manager/code/virtualization/cuda_api_intercept.c`
 
-#define QUOTA 1024  // 配额: 1024 bytes
+回答以下问题：
 
-static size_t used = 0;
-
-void *malloc(size_t size) {
-    static void *(*real_malloc)(size_t) = NULL;
-    if (!real_malloc)
-        real_malloc = dlsym(RTLD_NEXT, "malloc");
-
-    if (used + size > QUOTA) {
-        fprintf(stderr, "[QUOTA] malloc(%zu) 超配额! (已用 %zu / 配额 %d)\n",
-                size, used, QUOTA);
-        return NULL;  // 模拟 CUDA_ERROR_OUT_OF_MEMORY
-    }
-
-    void *p = real_malloc(size);
-    used += size;
-    printf("[OK] malloc(%zu) → %p, 已用 %zu/%d\n", size, p, used, QUOTA);
-    return p;
-}
-```
-
-要求:
-
-1. 编写测试程序，依次分配 200、400、500、200 bytes
-2. 预期: 前三个分配成功，第四个返回 NULL（超配额）
-3. 讨论: 这和 HAMi 的 `cuMemAlloc` 拦截逻辑有什么异同？
+1. 课堂的 `malloc` hook 需要哪些修改才能拦截 `cuMemAlloc`？列出至少 3 处差异。
+2. HAMi 还拦截了哪些 CUDA API？（至少列出 3 个，说明各自的作用）
+3. 我们的 `01_mymalloc.c` 缺少什么关键机制？从以下角度分析：**(a)** 配额释放（什么时候释放已用的配额？） **(b)** 多进程支持（不同进程的配额如何隔离？） **(c)** 容错（如果 hooked 程序 crash 了，配额会怎样？）
+4. 画出 HAMi 拦截 `cuMemAlloc` 的完整流程图（从应用程序调用到返回结果），标注配额检查、令牌桶检查的位置。
 
 ## 任务 2: GPU 虚拟化方案对比分析 (必做)
 
@@ -78,7 +53,7 @@ void *malloc(size_t size) {
 
 ## 提交要求
 
-1. 提交 `quota_malloc.c` + 测试程序 + 运行结果截图
+1. 提交任务 1 的 4 个问题回答 + 拦截流程图 (≤ 2 页)
 2. 提交 GPU 虚拟化方案对比分析 (≤ 2 页)
 3. (选做) HAMi 源码分析 或 多阶段构建对比
 
@@ -86,17 +61,18 @@ void *malloc(size_t size) {
 
 ## 评分标准
 
-| 维度                | 权重 | 要求                              |
-| ------------------- | ---- | --------------------------------- |
-| 任务 1 (LD_PRELOAD) | 30%  | 正确实现配额限制，测例通过        |
-| 任务 2 (方案分析)   | 45%  | 象限图清晰 + 三个场景选型有理有据 |
-| 文档质量            | 15%  | 截图清晰、描述完整                |
-| 进阶任务            | 10%  | 完成至少一项                      |
+| 维度                       | 权重 | 要求                              |
+| -------------------------- | ---- | --------------------------------- |
+| 任务 1 (CUDA API 拦截分析) | 40%  | 4 个问题回答准确 + 流程图正确     |
+| 任务 2 (方案分析)          | 35%  | 象限图清晰 + 三个场景选型有理有据 |
+| 文档质量                   | 15%  | 描述完整、逻辑清晰                |
+| 进阶任务                   | 10%  | 完成至少一项                      |
 
 ---
 
 ## 参考资料
 
+- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/code/virtualization/cuda_api_intercept.c` — CUDA API 拦截参考实现
 - AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/第一部分：基础理论篇.md` — 概念与选型
 - AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/第二部分：虚拟化技术篇.md` — 三种虚拟化实现
 - AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/hami/hmai-gpu-resources-guide.md` — HAMi 手册
