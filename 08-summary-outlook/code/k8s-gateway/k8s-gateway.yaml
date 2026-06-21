@@ -1,0 +1,49 @@
+# AI 网关 Deployment + Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-gateway
+  labels:
+    app: ai-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-gateway
+  template:
+    metadata:
+      labels:
+        app: ai-gateway
+    spec:
+      containers:
+      - name: gateway
+        # TODO: 替换为你的镜像 (docker build -t ai-gateway .)
+        image: ai-gateway:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        # TODO: 从 ConfigMap 加载配置
+        envFrom:
+        - configMapRef:
+            name: gateway-config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "500m"
+          limits:
+            memory: "512Mi"
+            cpu: "1"
+        # TODO: 添加 readinessProbe (GET /health)
+        # TODO: 添加 livenessProbe
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-gateway-svc
+spec:
+  selector:
+    app: ai-gateway
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP

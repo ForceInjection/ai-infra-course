@@ -1,0 +1,15 @@
+# 网关配置 ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+data:
+  # TODO: 填入你的网关配置
+  lb-policy: "round_robin"           # round_robin | consistent_hash | least_connections
+  rate-limit: "5"                    # 每秒请求数 per API Key
+  rate-burst: "10"                   # burst 容量
+  backends: |
+    [
+      {"url": "http://vllm-backend-1-svc:8000", "weight": 1, "model": "qwen"},
+      {"url": "http://vllm-backend-2-svc:8000", "weight": 2, "model": "qwen"}
+    ]

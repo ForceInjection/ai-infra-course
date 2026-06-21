@@ -24,7 +24,7 @@
 | 5    | 大模型推理框架入门：以 vLLM 为例         | ✔ 已评审 | 120min/54页, PagedAttention+nano-vllm源码+Continuous Batching         |
 | 6    | 大模型推理加速实践：KV Cache 原理与优化  | ✔ 已评审 | 90min/45页, KV Cache公式+Offloading+量化+LMCache+MoonCake             |
 | 7    | 云原生 AI 推理基础设施进阶：从引擎到平台 | ✔ 已评审 | 90min/45页, AI网关(vLLM Router+Semantic Router)+EP/TP/PP部署+可观测性 |
-| 8    | 课程总结与 AI Infra 前沿展望             | 待评审   | Agent Infra、AI Native                                                |
+| 8    | 课程总结与 AI Infra 前沿展望             | ✔ 已评审 | 90min/40页, 7模块回顾串联+前沿趋势+Agent Infra+大作业(3方向选1)       |
 
 ## 目录结构
 
@@ -137,7 +137,17 @@ ai-infra-course/
 │   ├── lab-environment.md
 │   ├── syllabus.md                      #   (gitignored)
 │   └── ppt-outline.md                   #   (gitignored)
-└── 08-summary-outlook/
+└── 08-summary-outlook/                    # 模块 8: 课程总结与展望
+    ├── README.md
+    ├── syllabus.md                      #   (gitignored)
+    ├── ppt-outline.md                   #   (gitignored)
+    ├── course-project.md                #   课程大作业 (3方向选1)
+    └── code/                            #   大作业骨架代码 + 报告模板
+        ├── README.md
+        ├── REPORT_TEMPLATE.md
+        ├── gpu-container-hook/          #     方向 A: 容器+拦截
+        ├── k8s-gateway/                 #     方向 B: K8s 调度
+        └── kvcache-simulator/           #     方向 C: KV Cache
 ```
 
 ## 每节课包含

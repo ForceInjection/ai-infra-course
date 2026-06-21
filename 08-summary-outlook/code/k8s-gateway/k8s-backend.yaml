@@ -1,0 +1,54 @@
+# GPU 推理后端 Deployment + Service
+# 要求: CUDA 12.8+, vLLM ≥ 0.8.0 (镜像内置 CUDA Runtime)
+# TODO: 填写完整的 spec (镜像、资源、端口)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-backend
+  labels:
+    app: vllm-backend
+spec:
+  replicas: 2  # TODO: 调整副本数
+  selector:
+    matchLabels:
+      app: vllm-backend
+  template:
+    metadata:
+      labels:
+        app: vllm-backend
+    spec:
+      # TODO: 如果有 GPU 节点, 添加 nodeSelector / tolerations
+      # nodeSelector:
+      #   nvidia.com/gpu.product: NVIDIA-GeForce-RTX-4090
+      containers:
+      - name: vllm
+        # TODO: 替换为你的镜像
+        image: vllm/vllm-openai:latest
+        args:
+        # TODO: 指定模型和参数
+        - "--model"
+        - "Qwen/Qwen2.5-0.5B-Instruct"
+        - "--port"
+        - "8000"
+        resources:
+          limits:
+            nvidia.com/gpu: 1  # GPU 调度
+          requests:
+            memory: "8Gi"
+            cpu: "4"
+        ports:
+        - containerPort: 8000
+        # TODO: 添加 readinessProbe (检查 /health, 等模型加载完)
+        # TODO: 添加 livenessProbe
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-backend-svc
+spec:
+  selector:
+    app: vllm-backend
+  ports:
+  - port: 8000
+    targetPort: 8000
+  type: ClusterIP

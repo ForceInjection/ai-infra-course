@@ -1,0 +1,57 @@
+# 无 K8s 集群时的本地替代方案
+# 启动: docker-compose up -d
+# 停止: docker-compose down
+version: "3.9"
+
+services:
+  # Mock vLLM 后端 1
+  backend-1:
+    build:
+      context: ./mock_backend
+      dockerfile: Dockerfile  # TODO: 创建 mock 后端的 Dockerfile
+    # 如果不用 Docker, 直接运行 python mock_vllm.py --port 8001
+    ports:
+      - "8001:8000"
+    environment:
+      - MODEL=qwen
+      - DELAY=0.05
+      - ERROR_RATE=0.0
+
+  # Mock vLLM 后端 2
+  backend-2:
+    build:
+      context: ./mock_backend
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8000"
+    environment:
+      - MODEL=qwen
+      - DELAY=0.08
+      - ERROR_RATE=0.1  # 10% 错误率, 用于测试故障转移
+
+  # Mock vLLM 后端 3
+  backend-3:
+    build:
+      context: ./mock_backend
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8000"
+    environment:
+      - MODEL=qwen-code
+      - DELAY=0.03
+      - ERROR_RATE=0.0
+
+  # AI 网关
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile  # TODO: 创建网关的 Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - LB_POLICY=round_robin
+      - BACKEND_URLS=http://backend-1:8000,http://backend-2:8000,http://backend-3:8000
+    depends_on:
+      - backend-1
+      - backend-2
+      - backend-3
