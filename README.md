@@ -1,8 +1,7 @@
-# 云原生 AI 基础设施：原理与实践 — 课程设计
+# 云原生 AI 基础设施：原理与实践
 
-> **面向对象**: 高年级本科生
-> **课时安排**: 8 次课 × 90 分钟 (模块 4/5 扩展至 120 分钟) ≈ 13 学时
-> **课程材料来源**: [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals) | [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev)
+> **面向对象**: 高年级本科生 &nbsp;|&nbsp; **课时**: 8 次课 ≈ 13 学时 (模块 4/5 各 120 分钟，其余 90 分钟)
+> **配套材料**: 每模块含 syllabus / PPT 大纲 / 代码 / 可视化 / 实验 / 作业，模块 8 含大作业 (3 方向选 1)
 
 ---
 
@@ -10,7 +9,7 @@
 
 本课程系统介绍云原生人工智能基础设施（AI Infra）的核心技术体系。从 Linux 基础与底层容器技术起步，依次覆盖 GPU 硬件架构与 CUDA 编程、GPU 虚拟化与标准化容器化实践、从 Device Plugin 到 DRA 的 Kubernetes 调度演进，以及以 vLLM 为代表的高吞吐推理框架和 KV Cache 加速优化策略。最后从 vLLM Router 到 DeepSeek 生产部署，构建完整的推理服务平台，并探讨 AI Infra 与 Agent Infra 融合的前沿趋势。
 
-**教学策略**: 硬件架构 → 编程模型（全程对比 CPU 编程）→ 动手验证 → 工具链。每个动手环节 1 页引导 PPT + 学生在终端操作，不把实验堆积在最后。
+**教学策略**: 硬件架构 → 编程模型 (全程对比 CPU 编程) → 动手验证 → 工具链。课堂动手实验穿插在各部分，不堆积在最后。模块 8 以课程大作业收尾，综合运用多模块知识。
 
 ## 课程目录
 
@@ -174,6 +173,4 @@ ai-infra-course/
 
 ## 材料来源
 
-- **AI-fundamentals**: [github.com/ForceInjection/AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals)
-- **cloud-native-dev**: [github.com/ForceInjection/cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev)
-- **nano-vllm**: [github.com/ForceInjection/nano-vllm](https://github.com/ForceInjection/nano-vllm)
+- **课程材料来源**: [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals) &nbsp;|&nbsp; [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev) &nbsp;|&nbsp; [nano-vllm](https://github.com/ForceInjection/nano-vllm)
