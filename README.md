@@ -1,176 +1,93 @@
 # 云原生 AI 基础设施：原理与实践
 
-> **面向对象**: 高年级本科生 &nbsp;|&nbsp; **课时**: 8 次课 ≈ 13 学时 (模块 4/5 各 120 分钟，其余 90 分钟)
-> **配套材料**: 每模块含 syllabus / PPT 大纲 / 代码 / 可视化 / 实验 / 作业，模块 8 含大作业 (3 方向选 1)
+> 8 次课，从 Linux 容器到推理服务平台。每行代码知其所以然。
 
 ---
 
-## 课程简介
+## 这门课讲什么
 
-本课程系统介绍云原生人工智能基础设施（AI Infra）的核心技术体系。从 Linux 基础与底层容器技术起步，依次覆盖 GPU 硬件架构与 CUDA 编程、GPU 虚拟化与标准化容器化实践、从 Device Plugin 到 DRA 的 Kubernetes 调度演进，以及以 vLLM 为代表的高吞吐推理框架和 KV Cache 加速优化策略。最后从 vLLM Router 到 DeepSeek 生产部署，构建完整的推理服务平台，并探讨 AI Infra 与 Agent Infra 融合的前沿趋势。
+一个 Chat 请求从浏览器到 GPU 硬件，穿越了多少层？每一层做了什么？为什么这么设计？
 
-**教学策略**: 硬件架构 → 编程模型 (全程对比 CPU 编程) → 动手验证 → 工具链。课堂动手实验穿插在各部分，不堆积在最后。模块 8 以课程大作业收尾，综合运用多模块知识。
+这门课把这条链路拆成 8 个模块，每个模块回答一个核心问题：
 
-## 课程目录
+| 模块                 | 核心问题                                    | 你会做什么                                                                          |
+| -------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **1. Linux 容器**    | 怎么把应用和 GPU 驱动打包在一起？           | 手写 Namespace 隔离、看懂 OverlayFS 分层、追踪 `docker run --gpus all` 完整调用链   |
+| **2. GPU & CUDA**    | GPU 为什么比 CPU 快 100 倍？                | 从 CUDA 线程层次写到 Shared Memory Tiling，把矩阵乘法从 10 秒优化到 0.05 秒         |
+| **2b. GPU 内存**     | Pinned 和 Pageable 内存差多少？             | 实测 DMA 带宽：pinned 55 GB/s vs pageable 22 GB/s——2.5 倍的工程决策依据             |
+| **3. GPU 虚拟化**    | 一张 A100 怎么分给 10 个人用？              | LD_PRELOAD 拦截 `cudaMalloc`，手写显存配额管理器，理解 HAMi 的 CUDA Hook 原理       |
+| **4. K8s GPU 调度**  | 100 台 GPU 服务器怎么管？                   | 从 `kubectl apply` 到容器内 `nvidia-smi`——追踪 7 步全链路，配置 HPA 弹性伸缩        |
+| **5. vLLM 推理引擎** | KV Cache 碎片率 60%→4%，怎么做到的？        | 逐行阅读 nano-vllm 1400 行源码，追踪 Sequence 状态机和 Block 分配回收               |
+| **6. KV Cache 优化** | 显存不够怎么办？                            | 手算 Llama-3-70B 的 KV Cache，对比 FP16→INT4 的 4× 压缩，跑 Offloading+LMCache 实验 |
+| **7. 推理服务平台**  | 1000 个用户、10 种模型、SLA 99.9%——怎么搭？ | 实现 AI 网关 (Token Bucket + Cache-Aware LB)，DeepSeek V3 32×H20 部署案例           |
+| **8. 总结展望**      | 学完了，然后呢？                            | 7 模块知识串联 + Agent Infra 前沿 + 大作业：三方向选一，提交代码+报告               |
 
-| 模块 | 主题                                     | 状态     | 核心内容                                                              |
-| ---- | ---------------------------------------- | -------- | --------------------------------------------------------------------- |
-| 1    | Linux 基础与容器技术入门                 | ✔ 已评审 | Namespace/Cgroup/OverlayFS、Docker 分层                               |
-| 2    | GPU 硬件架构与 CUDA 编程入门             | ✔ 已评审 | SM/Tensor Core/HBM/NVLink、CUDA Kernel、Tiling                        |
-| 2b   | GPU 内存管理 (高级)                      | ✔ 已评审 | Pinned/Pageable DMA、显存碎片化、跨进程共享                           |
-| 3    | GPU 虚拟化与容器化实践                   | ✔ 已评审 | MIG/Time-Slicing/HAMi、LD_PRELOAD CUDA 拦截、NVIDIA CTK               |
-| 4    | Kubernetes 入门与 GPU 工作负载调度       | ✔ 已评审 | 120min/52页, K8s基础+Device Plugin+DRA+Kueue+GPU调度实战              |
-| 5    | 大模型推理框架入门：以 vLLM 为例         | ✔ 已评审 | 120min/54页, PagedAttention+nano-vllm源码+Continuous Batching         |
-| 6    | 大模型推理加速实践：KV Cache 原理与优化  | ✔ 已评审 | 90min/45页, KV Cache公式+Offloading+量化+LMCache+MoonCake             |
-| 7    | 云原生 AI 推理基础设施进阶：从引擎到平台 | ✔ 已评审 | 90min/45页, AI网关(vLLM Router+Semantic Router)+EP/TP/PP部署+可观测性 |
-| 8    | 课程总结与 AI Infra 前沿展望             | ✔ 已评审 | 90min/40页, 7模块回顾串联+前沿趋势+Agent Infra+大作业(3方向选1)       |
+---
+
+## 一个请求的完整旅程
+
+```text
+用户浏览器
+  → [模块 7] AI 网关: 认证 → 限流 → Semantic Router 选模型 → Cache-Aware LB 选 Worker
+  → [模块 4] K8s: API Server → Scheduler Filter/Score/Bind → kubelet → Device Plugin Allocate
+  → [模块 3] GPU 虚拟化: HAMi LD_PRELOAD 拦截 CUDA → 显存隔离
+  → [模块 5] vLLM: PagedAttention Block Table 映射 → Continuous Batching
+  → [模块 6] KV Cache: FP8 量化 → Prefix Caching 命中 → 跳过 Prefill
+  → [模块 2] CUDA: Kernel 在 SM Tensor Core 上执行 → HBM 带宽 3.35 TB/s
+  → [模块 1] Linux 容器: Namespace 隔离 → NVIDIA CTK mknod + mount 注入 GPU 设备
+  → GPU 硬件
+```
+
+---
+
+## 动手，从第一行代码开始
+
+不是 `pip install` 然后 `import`。每个模块从底层原理出发，亲手写关键代码：
+
+- 模块 1: `strace docker run --gpus all` 追踪系统调用
+- 模块 2: `nvcc matmul_tiled.cu`——200 行 CUDA，加速 200 倍
+- 模块 3: `LD_PRELOAD=./libmymalloc.so ls`——每次 ls 都看到拦截日志
+- 模块 4: `kubectl apply -f gpu-pod.yaml && kubectl logs`——YAML 声明 `nvidia.com/gpu: 1`，自动调度
+- 模块 5: `python trace_nanovllm.py`——追踪 Sequence 状态转换和 Block 分配
+- 模块 6: `python calculate_qwen3_memory.py --preset qwen2.5-72b`——零依赖算显存
+- 模块 7: `python ai_gateway.py`——140 行 Flask 网关，Token Bucket + 故障转移
+- 模块 8: 大作业——三个方向选一，交代码+报告
+
+---
+
+## 环境要求
+
+| 模块 | 需要 GPU？ | 说明                                  |
+| ---- | ---------- | ------------------------------------- |
+| 1    | 否         | 任何 Linux/macOS                      |
+| 2    | 推荐       | 无 GPU 可看可视化 HTML                |
+| 3    | 否         | LD_PRELOAD 拦截 malloc，不需要 GPU    |
+| 4    | 推荐       | minikube/kind 即可，无 GPU 也能学 K8s |
+| 5    | 推荐       | 0.5B 模型 1GB 显存，消费卡可跑        |
+| 6    | 否         | 显存计算零依赖；GPU 实验可选          |
+| 7    | 否         | Flask 网关 + Mock 后端；GPU 实验可选  |
+| 8    | 否         | 大作业方向 C 零硬件依赖               |
+
+---
 
 ## 目录结构
 
 ```text
 ai-infra-course/
-├── README.md                         # 本文件
-├── outline.md                        # 原始课程大纲
-├── .gitignore                        # 排除 syllabus.md / ppt-outline.md / *.pptx / 编译产物
-├── 01-linux-containers/              # 模块 1
-│   ├── code/                         #   配套 Bash 脚本 (4个)
-│   │   ├── README.md                 #     编译运行说明 + 预期输出
-│   │   ├── 01_namespace_demo.sh
-│   │   ├── 02_cgroup_demo.sh
-│   │   ├── 03_overlayfs_demo.sh
-│   │   └── 04_docker_layer_demo.sh
-│   ├── README.md                    #   模块说明
-│   ├── visuals/                     #   可视化 HTML (4个)
-│   │   ├── overlayfs-demo.html      #     OverlayFS + COW
-│   │   ├── pid-namespace-demo.html  #     PID Namespace 双视角
-│   │   ├── docker-run-gpus-all.html #     docker run 全链路
-│   │   └── containerd-architecture.html # containerd 架构
-│   ├── hands-on-exercise.md         #   课堂动手题
-│   ├── homework.md                  #   课后练习
-│   ├── lab-environment.md           #   实验环境说明
-│   ├── syllabus.md                  #   教学大纲 (gitignored)
-│   └── ppt-outline.md               #   PPT 大纲 (gitignored)
-├── 02-gpu-cuda/                      # 模块 2
-│   ├── code/                         #   配套 CUDA 源码 (4个)
-│   │   ├── README.md                 #     编译运行说明 + 预期输出
-│   │   ├── Makefile                  #     一键编译
-│   │   ├── cuda-docker               #     Docker 编译运行脚本
-│   │   ├── 01_vec_add.cu
-│   │   ├── 02_matmul_naive.cu
-│   │   ├── 03_matmul_tiled.cu
-│   │   └── 04_device_query.cu
-│   ├── visuals/                     #   可视化 HTML (4个)
-│   │   ├── gpu-architecture.html    #     GPU 逻辑架构全景
-│   │   ├── cuda-thread-hierarchy.html #   Grid→Block→Warp→Thread
-│   │   ├── shared-memory-tiling.html  #   Shared Memory Tiling
-│   │   └── thread-index-mapping.html  #   线程索引映射 (1D/2D/3D)
-│   ├── hands-on-exercise.md
-│   ├── homework.md
-│   ├── lab-environment.md
-│   ├── syllabus.md                  #   (gitignored)
-│   └── ppt-outline.md               #   (gitignored)
-├── 02b-gpu-memory/                   # 模块 2b: GPU 内存管理 (高级)
-│   ├── README.md
-│   ├── code/
-│   │   ├── README.md
-│   │   └── 01_dma_bandwidth.py
-│   └── visuals/
-│       └── gpu-memory-visual.html
-├── 03-gpu-virtualization/              # 模块 3
-│   ├── README.md
-│   ├── code/
-│   │   ├── README.md
-│   │   ├── 01_mymalloc.c              #   LD_PRELOAD malloc hook
-│   │   └── 02_test_malloc.c           #   配额测试程序
-│   ├── visuals/
-│   │   └── ld-preload-flow.html       #   LD_PRELOAD 拦截流程
-│   ├── hands-on-exercise.md
-│   ├── homework.md
-│   ├── lab-environment.md
-│   ├── syllabus.md                  #   (gitignored)
-│   └── ppt-outline.md               #   (gitignored)
-├── 04-kubernetes-gpu/                   # 模块 4: K8s 入门与 GPU 调度
-│   ├── README.md
-│   ├── code/
-│   │   ├── README.md
-│   │   ├── 01_nginx_demo.yaml           #   Nginx Deployment + Service
-│   │   ├── 02_gpu_pod.yaml              #   GPU Pod — nvidia-smi 测试
-│   │   └── 03_gpu_deploy.yaml           #   GPU Deployment — 生产级工作负载
-│   ├── visuals/
-│   │   └── k8s-gpu-flow.html            #   GPU 调度全链路 7 步交互动画
-│   ├── hands-on-exercise.md
-│   ├── homework.md
-│   ├── lab-environment.md
-│   ├── syllabus.md                      #   (gitignored)
-│   └── ppt-outline.md                   #   (gitignored)
-├── 05-vllm-inference/                   # 模块 5: vLLM 推理框架
-│   ├── README.md
-│   ├── code/
-│   │   ├── README.md
-│   │   └── trace_nanovllm.py            #   nano-vllm 执行追踪脚本
-│   ├── hands-on-exercise.md
-│   ├── homework.md
-│   ├── lab-environment.md
-│   ├── syllabus.md                      #   (gitignored)
-│   └── ppt-outline.md                   #   (gitignored)
-├── 06-kvcache-optimization/             # 模块 6: KV Cache 优化
-│   ├── README.md
-│   ├── code/
-│   │   ├── README.md
-│   │   ├── calculate_qwen3_memory.py    #   通用 GQA/MHA 显存估算
-│   │   ├── calculate_deepseek_v4_memory.py  # DeepSeek V4 专用估算
-│   │   ├── qwen3_06b_config.json
-│   │   └── deepseek_v4_pro_config.json
-│   ├── hands-on-exercise.md
-│   ├── homework.md
-│   ├── lab-environment.md
-│   ├── syllabus.md                      #   (gitignored)
-│   └── ppt-outline.md                   #   (gitignored)
-├── 07-maas-infra/                        # 模块 7: 从推理引擎到服务平台
-│   ├── README.md
-│   ├── code/
-│   │   ├── README.md
-│   │   └── ai_gateway.py                #   Flask 简易 AI 网关 (~140行)
-│   ├── hands-on-exercise.md
-│   ├── homework.md
-│   ├── lab-environment.md
-│   ├── syllabus.md                      #   (gitignored)
-│   └── ppt-outline.md                   #   (gitignored)
-└── 08-summary-outlook/                    # 模块 8: 课程总结与展望
-    ├── README.md
-    ├── syllabus.md                      #   (gitignored)
-    ├── ppt-outline.md                   #   (gitignored)
-    ├── course-project.md                #   课程大作业 (3方向选1)
-    └── code/                            #   大作业骨架代码 + 报告模板
-        ├── README.md
-        ├── REPORT_TEMPLATE.md
-        ├── gpu-container-hook/          #     方向 A: 容器+拦截
-        ├── k8s-gateway/                 #     方向 B: K8s 调度
-        └── kvcache-simulator/           #     方向 C: KV Cache
+├── README.md
+├── 01-linux-containers/         # 模块 1
+├── 02-gpu-cuda/                 # 模块 2
+├── 02b-gpu-memory/              # 模块 2b
+├── 03-gpu-virtualization/       # 模块 3
+├── 04-kubernetes-gpu/           # 模块 4
+├── 05-vllm-inference/           # 模块 5
+├── 06-kvcache-optimization/     # 模块 6
+├── 07-maas-infra/               # 模块 7
+└── 08-summary-outlook/          # 模块 8
 ```
 
-## 每节课包含
+每个模块含: `README.md` / `syllabus.md` / `ppt-outline.md` / `code/` / `hands-on-exercise.md` / `homework.md` / `lab-environment.md`。
 
-| 文件                   | 说明                                  |
-| ---------------------- | ------------------------------------- |
-| `code/`                | 配套代码和脚本，含 README             |
-| `visuals/`             | 可视化 HTML，课堂演示用               |
-| `hands-on-exercise.md` | 课堂动手题：题目、步骤、讲解要点      |
-| `homework.md`          | 课后练习：题目、要求、评分标准        |
-| `lab-environment.md`   | 实验环境说明：硬件/软件要求、搭建步骤 |
+---
 
-## 实验环境
-
-| 模块                  | 运行方式                                                                                            |
-| --------------------- | --------------------------------------------------------------------------------------------------- |
-| 模块 1 (Bash)         | 直接执行 `.sh` 脚本，需要 `sudo`                                                                    |
-| 模块 2 (CUDA)         | 本地 `make all && make run`，或使用 `bash cuda-docker all`（Docker 镜像需包含 CUDA Toolkit + nvcc） |
-| 模块 3 (C/LD_PRELOAD) | `gcc -shared -fPIC -o libmymalloc.so 01_mymalloc.c -ldl`，`LD_PRELOAD=./libmymalloc.so <cmd>`       |
-| 模块 4 (K8s)          | minikube / k3s / kind 任选，`kubectl apply -f code/*.yaml`，GPU 实验需 NVIDIA Device Plugin         |
-| 模块 5 (vLLM)         | nano-vllm: `pip install git+https://github.com/ForceInjection/nano-vllm.git`；vLLM: 需 GPU          |
-| 模块 6 (KV Cache)     | 显存计算脚本：Python 3.8+，零依赖，无需 GPU；LMCache 实验：需 vLLM + GPU                            |
-| 模块 7 (AI 网关)      | Flask 网关：`pip install flask requests` + `python ai_gateway.py`；后端需 vLLM + GPU                |
-
-## 材料来源
-
-- **课程材料来源**: [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals) &nbsp;|&nbsp; [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev) &nbsp;|&nbsp; [nano-vllm](https://github.com/ForceInjection/nano-vllm)
+课程材料基于 [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals)、[cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev) 和 [nano-vllm](https://github.com/ForceInjection/nano-vllm)。
