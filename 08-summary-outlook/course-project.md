@@ -4,14 +4,7 @@
 
 从以下三个方向中**任选一个**完成大作业。每个方向都聚焦 **AI 基础设施** (而非 AI 应用)，覆盖课程的多个核心模块。
 
-根据你的硬件条件，选择不同的实验方式:
-
-| 硬件条件             | 可做的实验                                                                 |
-| -------------------- | -------------------------------------------------------------------------- |
-| **无 GPU**           | 纯 CPU 模拟: 碎片模拟器、内存计算、网关+Mock 后端、K8s YAML (dry-run 验证) |
-| **单卡 4090 (24GB)** | 上述全部 + 实际运行 vLLM/nano-vllm (Qwen3-0.6B 仅需 ~1.2GB)                |
-
-> 评分标准不因硬件条件而异。无 GPU 方案通过模拟和计算同样可以达到技术要求。
+> **实验环境**: 方向 A 和 B 所需的 GPU 机器和 K8s 集群由教师统一提供。方向 C 零硬件依赖，纯 Python 标准库即可完成。
 >
 > **骨架代码**: 每个方向在 `code/` 目录下提供了可运行的骨架框架，关键位置标注 `# TODO:`。搜索 `TODO` 即可找到需要完成的代码位置。详见 `code/README.md`。
 
@@ -40,7 +33,7 @@
 
 **难度**: ★★★☆ (中等) &nbsp;|&nbsp; **覆盖模块**: 1, 3, 5 &nbsp;|&nbsp; **估计代码量**: ~300 行 (Dockerfile ~20 + C ~100 + Python ~150)
 
-> **难度说明**: Dockerfile 部分较简单 (模块 1 已实践)；LD_PRELOAD CUDA hook 是核心挑战，但 `cudaMalloc` 的拦截模式与模块 3 的 malloc 完全相同 (编译命令也相同: `gcc -shared -fPIC -ldl`)，主要工作是理解 CUDA Runtime API 的返回值和配额逻辑；nano-vllm 集成有模块 5 的 tracing 脚本可直接参考。**最大风险**: 无 GPU 学生无法完成 CUDA hook 验证 → 提供备选: LD_PRELOAD `malloc` 重做模块 3 实验 + 增强 (增加显存配额模拟逻辑，但拦截的是 `malloc` 而非 `cudaMalloc`)。
+> **难度说明**: Dockerfile 部分较简单 (模块 1 已实践)；LD_PRELOAD CUDA hook 是核心挑战，但 `cudaMalloc` 的拦截模式与模块 3 的 malloc 完全相同 (编译命令也相同: `gcc -shared -fPIC -ldl`)，主要工作是理解 CUDA Runtime API 的返回值和配额逻辑；nano-vllm 集成有模块 5 的 tracing 脚本可直接参考。GPU 机器由教师提供。
 
 ### 2.1 目标
 
@@ -96,7 +89,7 @@
 
 **难度**: ★★★☆ (中等) &nbsp;|&nbsp; **覆盖模块**: 1, 4, 7 &nbsp;|&nbsp; **估计代码量**: ~350 行 &nbsp;|&nbsp; **可 2 人协作** (YAML ~120 + 网关 ~180 + 压测脚本 ~50)
 
-> **难度说明**: K8s YAML 部分较简单 (模块 4 已实践 Deployment/Service/HPA)；网关可直接复用模块 7 `code/ai_gateway.py` 并增强 (加健康检查详情、加 HPA metrics endpoint)；GPU 调度追踪本质是 `kubectl describe/events` + 画时序图。**最大风险**: 无 K8s 集群 → 提供 docker-compose 替代方案 + K8s YAML dry-run 验证。**注意**: minikube/kind 在个人电脑上即可运行，无需服务器。
+> **难度说明**: K8s YAML 部分较简单 (模块 4 已实践)；网关可直接复用模块 7 `code/ai_gateway.py` 并增强；GPU 调度追踪本质是 `kubectl describe/events` + 画时序图。K8s 集群和 GPU 由教师提供，后端使用预部署的 vLLM 实例 (或简单的 GPU Pod)，学生无需自行安装 vLLM。
 
 ### 3.1 目标
 
@@ -122,11 +115,10 @@
 
 - 编写 K8s YAML，部署一个推理服务的完整拓扑:
   - AI 网关 (Flask/Go): Deployment + Service (ClusterIP)
-  - vLLM 后端 (或 Mock 后端): Deployment + Service
+  - vLLM 后端: Deployment + Service (教师预部署)
   - ConfigMap: 网关配置 (LB 策略、限流参数、后端列表)
 - 网关需实现: Token Bucket 限流 (已提供) + 实现至少 2 种 LB 策略 (加权轮询 / 一致性哈希 / 最少连接 三选二) + 健康检查 + OpenAI 兼容 API
-- K8s YAML 必须通过 `kubectl --dry-run=client` 或 `kubeconform` 验证无语法错误
-- 如果无 K8s 集群: 用 docker-compose 模拟运行, K8s YAML 通过 dry-run 验证即可
+- K8s YAML 必须通过 `kubectl --dry-run=client` 或 `kubeconform` 验证无语法错误 (K8s 集群由教师提供)
 
 #### 3.2.3 弹性伸缩与故障恢复 (模块 4)
 
@@ -145,9 +137,7 @@
 ### 3.3 交付物
 
 - `app.py`: 网关源码 (基于骨架 `k8s-gateway/app.py`)
-- `mock_vllm.py`: Mock 推理后端
 - `k8s-*.yaml` ×4: 后端/网关/ConfigMap/HPA + `kubectl --dry-run` 验证结果
-- `docker-compose.yml`: 本地一键启动 (无 K8s 时的替代方案)
 - 压测脚本 + 伸缩/故障恢复实验数据 + GPU 调度时序图
 - `REPORT.md`: 技术报告
 
