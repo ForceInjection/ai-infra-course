@@ -4,7 +4,7 @@
 
 从以下三个方向中**任选一个**完成大作业。每个方向都聚焦 **AI 基础设施** (而非 AI 应用)，覆盖课程的多个核心模块。
 
-> **实验环境**: 方向 A 和 B 所需的 GPU 机器和 K8s 集群由教师统一提供。方向 C 零硬件依赖，纯 Python 标准库即可完成。
+> **实验环境**: 课程结束后一周内提供包含 GPU 服务器和 K8s 集群的实验环境，用于方向 A (Docker + CUDA hook) 和方向 B (K8s 调度 + vLLM 推理)。方向 C 零硬件依赖，纯 Python 标准库即可完成。
 >
 > **骨架代码**: 每个方向在 `code/` 目录下提供了可运行的骨架框架，关键位置标注 `# TODO:`。搜索 `TODO` 即可找到需要完成的代码位置。详见 `code/README.md`。
 
@@ -33,7 +33,7 @@
 
 **难度**: ★★★☆ (中等) &nbsp;|&nbsp; **覆盖模块**: 1, 3, 5 &nbsp;|&nbsp; **估计代码量**: ~300 行 (Dockerfile ~20 + C ~100 + Python ~150)
 
-> **难度说明**: Dockerfile 部分较简单 (模块 1 已实践)；LD_PRELOAD CUDA hook 是核心挑战，但 `cudaMalloc` 的拦截模式与模块 3 的 malloc 完全相同 (编译命令也相同: `gcc -shared -fPIC -ldl`)，主要工作是理解 CUDA Runtime API 的返回值和配额逻辑；nano-vllm 集成有模块 5 的 tracing 脚本可直接参考。GPU 机器由教师提供。
+> **难度说明**: Dockerfile 部分较简单 (模块 1 已实践)；LD_PRELOAD CUDA hook 是核心挑战，但 `cudaMalloc` 的拦截模式与模块 3 的 malloc 完全相同 (编译命令也相同: `gcc -shared -fPIC -ldl`)，主要工作是理解 CUDA Runtime API 的返回值和配额逻辑；nano-vllm 集成有模块 5 的 tracing 脚本可直接参考。
 
 ### 2.1 目标
 
@@ -80,20 +80,20 @@
 
 - `cuda_hook.c` + `Makefile`: LD_PRELOAD hook 源码 + 编译脚本 (基于骨架 `gpu-container-hook/`)
 - `Dockerfile`: GPU 推理容器镜像
-- 实验数据: `strace` 日志 / CUDA API 调用统计 / 显存分配时间线图表
+- `experiments/`: 实验数据目录，含 strace 日志、CUDA API 调用统计 (CSV 或文本)、显存分配时间线图表 (PNG)
 - `REPORT.md`: 技术报告
 
 ---
 
-## 三、方向 B: K8s GPU 调度 — 从 YAML 到容器启动
+## 三、方向 B: K8s GPU 调度与推理网关部署
 
 **难度**: ★★★☆ (中等) &nbsp;|&nbsp; **覆盖模块**: 1, 4, 7 &nbsp;|&nbsp; **估计代码量**: ~350 行 &nbsp;|&nbsp; **可 2 人协作** (YAML ~120 + 网关 ~180 + 压测脚本 ~50)
 
-> **难度说明**: K8s YAML 部分较简单 (模块 4 已实践)；网关可直接复用模块 7 `code/ai_gateway.py` 并增强；GPU 调度追踪本质是 `kubectl describe/events` + 画时序图。K8s 集群和 GPU 由教师提供，后端使用预部署的 vLLM 实例 (或简单的 GPU Pod)，学生无需自行安装 vLLM。
+> **难度说明**: K8s YAML 部分较简单 (模块 4 已实践)；网关可直接复用模块 7 `code/ai_gateway.py` 并增强；GPU 调度追踪本质是 `kubectl describe/events` + 画时序图。使用 Qwen2.5-0.5B (~1GB) 等小模型部署 vLLM 实例，同时满足 GPU 调度追踪和网关真实后端的需求，将两条主线串起来。
 
 ### 3.1 目标
 
-围绕一条 `kubectl apply -f gpu-pod.yaml` 命令，深入理解 K8s GPU 调度的完整链路。实现 AI 网关 + GPU 工作负载的 K8s 部署方案，并验证弹性伸缩和故障恢复。
+围绕 K8s GPU 调度全链路和推理网关部署两条主线：深入追踪 GPU Pod 从 YAML 到运行的完整过程，同时将 AI 网关部署到 K8s 并验证弹性伸缩与故障恢复。
 
 > **协作说明**: 本方向最多可由两人协作完成 — 一人负责网关实现 (Flask + LB 策略 + 健康检查)，一人负责 K8s 部署 (YAML + HPA + GPU 调度追踪)。合并后联调压测。提交时需注明分工。
 
@@ -115,10 +115,10 @@
 
 - 编写 K8s YAML，部署一个推理服务的完整拓扑:
   - AI 网关 (Flask/Go): Deployment + Service (ClusterIP)
-  - vLLM 后端: Deployment + Service (教师预部署)
+  - vLLM 后端: Deployment + Service (使用小模型如 Qwen2.5-0.5B, ~1GB 显存)
   - ConfigMap: 网关配置 (LB 策略、限流参数、后端列表)
 - 网关需实现: Token Bucket 限流 (已提供) + 实现至少 2 种 LB 策略 (加权轮询 / 一致性哈希 / 最少连接 三选二) + 健康检查 + OpenAI 兼容 API
-- K8s YAML 必须通过 `kubectl --dry-run=client` 或 `kubeconform` 验证无语法错误 (K8s 集群由教师提供)
+- K8s YAML 必须通过 `kubectl --dry-run=client` 或 `kubeconform` 验证无语法错误
 
 #### 3.2.3 弹性伸缩与故障恢复 (模块 4)
 
@@ -137,8 +137,8 @@
 ### 3.3 交付物
 
 - `app.py`: 网关源码 (基于骨架 `k8s-gateway/app.py`)
-- `k8s-*.yaml` ×4: 后端/网关/ConfigMap/HPA + `kubectl --dry-run` 验证结果
-- 压测脚本 + 伸缩/故障恢复实验数据 + GPU 调度时序图
+- `k8s/`: 部署 YAML 目录，含后端/网关/ConfigMap/HPA 共 4 个文件 + `kubectl --dry-run` 验证输出
+- `benchmark/`: 压测脚本 (推荐 locust 或 wrk) + 实验结果 (CSV + 图表) + GPU 调度时序图 (PNG)
 - `REPORT.md`: 技术报告
 
 ---
@@ -205,8 +205,8 @@
 - `calculator.py`: 显存计算工具 (基于骨架 `kvcache-simulator/calculator.py`)
 - `simulator.py`: PagedAttention 碎片模拟器 (基于骨架 `kvcache-simulator/simulator.py`)
 - `lru_cache.py`: Prefix Cache LRU 模拟器 (基于骨架 `kvcache-simulator/lru_cache.py`)
-- `visualize.py`: matplotlib 图表生成 (基于骨架 `kvcache-simulator/visualize.py`)
-- GPU 实测脚本 + 数据 (可选, 有 GPU 时)
+- `visualize.py`: matplotlib 图表生成 (基于骨架 `kvcache-simulator/visualize.py`)，输出 4 张图表 (模型对比 / 精度并发 / 碎片率 / 命中率)
+- `gpu_experiments/` (可选): GPU 实测脚本 + 数据
 - `REPORT.md`: 技术报告 (含全部图表和分析)
 
 ---
@@ -218,4 +218,4 @@
 - 模块 4: `04-kubernetes-gpu/visuals/k8s-gpu-flow.html` (GPU 调度全链路)
 - 模块 5: `05-vllm-inference/code/trace_nanovllm.py` (nano-vllm 追踪脚本)
 - 模块 6: `06-kvcache-optimization/code/calculate_qwen3_memory.py` (显存计算脚本)
-- nano-vllm: https://github.com/ForceInjection/nano-vllm
+- nano-vllm: <https://github.com/ForceInjection/nano-vllm>
