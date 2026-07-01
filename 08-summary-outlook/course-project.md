@@ -94,13 +94,15 @@
 
 ## 三、方向 B: K8s GPU 调度 — 从 YAML 到容器启动
 
-**难度**: ★★★☆ (中等) &nbsp;|&nbsp; **覆盖模块**: 1, 4, 7 &nbsp;|&nbsp; **估计代码量**: ~350 行 (YAML ~120 + 网关 ~180 + 压测脚本 ~50)
+**难度**: ★★★☆ (中等) &nbsp;|&nbsp; **覆盖模块**: 1, 4, 7 &nbsp;|&nbsp; **估计代码量**: ~350 行 &nbsp;|&nbsp; **可 2 人协作** (YAML ~120 + 网关 ~180 + 压测脚本 ~50)
 
 > **难度说明**: K8s YAML 部分较简单 (模块 4 已实践 Deployment/Service/HPA)；网关可直接复用模块 7 `code/ai_gateway.py` 并增强 (加健康检查详情、加 HPA metrics endpoint)；GPU 调度追踪本质是 `kubectl describe/events` + 画时序图。**最大风险**: 无 K8s 集群 → 提供 docker-compose 替代方案 + K8s YAML dry-run 验证。**注意**: minikube/kind 在个人电脑上即可运行，无需服务器。
 
 ### 3.1 目标
 
 围绕一条 `kubectl apply -f gpu-pod.yaml` 命令，深入理解 K8s GPU 调度的完整链路。实现 AI 网关 + GPU 工作负载的 K8s 部署方案，并验证弹性伸缩和故障恢复。
+
+> **协作说明**: 本方向最多可由两人协作完成 — 一人负责网关实现 (Flask + LB 策略 + 健康检查)，一人负责 K8s 部署 (YAML + HPA + GPU 调度追踪)。合并后联调压测。提交时需注明分工。
 
 ### 3.2 要求
 
