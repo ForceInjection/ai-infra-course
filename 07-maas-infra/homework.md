@@ -104,7 +104,7 @@ vllm-router --workers 127.0.0.1:8001,127.0.0.1:8002 \
 
 ## 参考资料
 
-- AI-fundamentals: `04_cloud_native_ai_platform/k8s/05_llm_d_intro.md`
-- AI-fundamentals: `09_inference_system/reference_design/` 全套参考设计文档
-- AI-fundamentals: `09_inference_system/cost_analysis/`
-- AI-fundamentals: `09_inference_system/vllm/routing/`
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/k8s/05_llm_d_intro.md)
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/reference_design/) 全套参考设计文档
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/cost_analysis/)
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/vllm/routing/)

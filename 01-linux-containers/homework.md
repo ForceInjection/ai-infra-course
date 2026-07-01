@@ -31,15 +31,11 @@ COMMAND="$2"
 **要求**:
 
 1. **文件系统隔离**: 使用 `unshare --mount` + `mount --bind` 为进程创建独立的 mount namespace，或使用 `chroot` 切换到指定的 rootfs
-
 2. **PID 隔离**: 使用 `unshare --pid --fork` 使进程看到独立的 PID 空间 (容器内 PID 从 1 开始)
-
 3. **网络隔离**: 使用 `unshare --net` 为进程分配独立的网络栈
-
 4. **Cgroup 资源限制**: 使用 `cgcreate`/`cgset` 为进程设置：
    - CPU 限制: 最多使用 1 个 CPU 核心
    - 内存限制: 最多使用 256 MB
-
 5. **在隔离环境中执行命令**: 在隔离环境中运行作为参数传入的命令
 
 ### 提示与参考
@@ -93,14 +89,11 @@ ip addr    # 应该只有 lo 接口
 
 ## 任务 2：Docker 分层存储探索 (必做)
 
-参考 cloud-native-dev `1.0_Docker/Union Filesystem 学习教程.md` §4，完成以下探索：
+参考 [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev/blob/main/1.0_Docker/Union%20Filesystem%20%E5%AD%A6%E4%B9%A0%E6%95%99%E7%A8%8B.md) §4，完成以下探索：
 
 1. **分析 Docker 镜像层**: 选择一个你常用的 Docker 镜像（如 `ubuntu:22.04`, `python:3.11`），使用 `docker history` 查看其层结构。记录每一层的大小和用途。
-
 2. **验证层共享**: 拉取两个共享基础镜像的 image（如 `ubuntu:22.04` 和 `ubuntu:20.04` 或 `python:3.11`），确认 `docker system df -v` 中共享层的存储仅计算一次。
-
 3. **多层构建实验**: 编写一个至少有 5 层的 Dockerfile，先构建一次，然后修改中间某一行，再次构建。记录哪些层使用了缓存（`CACHED`），哪些层被重建。解释缓存失效原理。
-
 4. **OverlayFS 文件定位**: 使用 `docker inspect` 找到某运行中容器的 `UpperDir` 和 `LowerDir`，进入 `UpperDir` 查看容器运行时产生的新文件和修改文件。删除容器后观察 `UpperDir` 的变化。
 
 ---
@@ -117,7 +110,7 @@ ip addr    # 应该只有 lo 接口
 
 ### Option B: 多容器网络实验
 
-参考 cloud-native-dev `0_Introduction/面向云原生的 Linux 基础课程/demos/container_communication.sh`，使用 `ip netns` 创建两个网络隔离的 namespace，通过 veth pair 连接它们。验证网络隔离和连通性。
+参考 [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev/blob/main/0_Introduction/%E9%9D%A2%E5%90%91%E4%BA%91%E5%8E%9F%E7%94%9F%E7%9A%84%20Linux%20%E5%9F%BA%E7%A1%80%E8%AF%BE%E7%A8%8B/demos/container_communication.sh)，使用 `ip netns` 创建两个网络隔离的 namespace，通过 veth pair 连接它们。验证网络隔离和连通性。
 
 ---
 
@@ -147,9 +140,9 @@ ip addr    # 应该只有 lo 接口
 
 ## 参考资料
 
-- cloud-native-dev: `1.0_Docker/Cgroup 和 Namespace 学习教程.md` — Namespace/Cgroup 完整教程 (§2 unshare 实验, §4 cgroup 实验)
-- cloud-native-dev: `1.0_Docker/Union Filesystem 学习教程.md` — OverlayFS 原理与实践 (§2 OverlayFS 挂载, §3 Docker 存储驱动, §4 镜像分层分析)
-- cloud-native-dev: `0_Introduction/面向云原生的 Linux 基础课程/demos/process_isolation_demo.sh` — 进程隔离演示参考
-- cloud-native-dev: `0_Introduction/面向云原生的 Linux 基础课程/demos/image_layers_demo.sh` — 镜像层演示参考
+- [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev/blob/main/1.0_Docker/Cgroup%20%E5%92%8C%20Namespace%20%E5%AD%A6%E4%B9%A0%E6%95%99%E7%A8%8B.md) — Namespace/Cgroup 完整教程 (§2 unshare 实验, §4 cgroup 实验)
+- [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev/blob/main/1.0_Docker/Union%20Filesystem%20%E5%AD%A6%E4%B9%A0%E6%95%99%E7%A8%8B.md) — OverlayFS 原理与实践 (§2 OverlayFS 挂载, §3 Docker 存储驱动, §4 镜像分层分析)
+- [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev/blob/main/0_Introduction/%E9%9D%A2%E5%90%91%E4%BA%91%E5%8E%9F%E7%94%9F%E7%9A%84%20Linux%20%E5%9F%BA%E7%A1%80%E8%AF%BE%E7%A8%8B/demos/process_isolation_demo.sh) — 进程隔离演示参考
+- [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev/blob/main/0_Introduction/%E9%9D%A2%E5%90%91%E4%BA%91%E5%8E%9F%E7%94%9F%E7%9A%84%20Linux%20%E5%9F%BA%E7%A1%80%E8%AF%BE%E7%A8%8B/demos/image_layers_demo.sh) — 镜像层演示参考
 - `man unshare` / `man cgcreate` / `man cgset` — Linux 手册
-- AI-fundamentals: `04_cloud_native_ai_platform/k8s/01_nvidia_container_toolkit_analysis.md` — 容器运行时接入 GPU
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/k8s/01_nvidia_container_toolkit_analysis.md) — 容器运行时接入 GPU

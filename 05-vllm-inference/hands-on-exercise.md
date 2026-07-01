@@ -113,7 +113,7 @@ python benchmark_serving.py \
 ### Step 1: 安装 nano-vllm (2 min)
 
 ```bash
-pip install git+https://github.com/GeeeekExplorer/nano-vllm.git
+pip install git+https://github.com/ForceInjection/nano-vllm.git
 
 # 下载模型
 huggingface-cli download --resume-download Qwen/Qwen3-0.6B \

@@ -71,7 +71,7 @@ python -c "from transformers import AutoModel; AutoModel.from_pretrained('Qwen/Q
 
 ```bash
 # 安装 nano-vllm
-pip install git+https://github.com/GeeeekExplorer/nano-vllm.git
+pip install git+https://github.com/ForceInjection/nano-vllm.git
 
 # 下载测试模型 (Qwen3-0.6B, ~1.2GB)
 huggingface-cli download --resume-download Qwen/Qwen3-0.6B \

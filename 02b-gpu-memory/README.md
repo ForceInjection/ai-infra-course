@@ -35,5 +35,4 @@ GPU 内存管理附录，从 CPU/GPU 对称性出发，介绍内存层级、DMA 
 
 ## 参考来源
 
-- [AI-infra vllm-bench](https://github.com/ForceInjection/vllm-bench) — GPU 内存管理完整教程 + 可视化
 - [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals) — GPU 内存管理基础

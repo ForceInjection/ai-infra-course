@@ -13,7 +13,7 @@
 课堂的 `01_mymalloc.c` 演示了 `LD_PRELOAD` → hook `malloc` → 配额检查的基本原理。HAMi 把这个思路搬到了 CUDA API 上。阅读以下材料：
 
 - 课堂代码: `code/01_mymalloc.c`
-- HAMi 参考: AI-fundamentals `04_cloud_native_ai_platform/gpu_manager/code/virtualization/cuda_api_intercept.c`
+- HAMi 参考: [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/gpu_manager/code/virtualization/cuda_api_intercept.c)
 
 回答以下问题：
 
@@ -24,7 +24,7 @@
 
 ## 任务 2: GPU 虚拟化方案对比分析 (必做)
 
-阅读 AI-fundamentals `04_cloud_native_ai_platform/gpu_manager/` 中的四部分教程，完成:
+阅读 [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/gpu_manager/) 中的四部分教程，完成:
 
 1. 画出 MIG、Time-Slicing、HAMi-core、MPS 四种方案的「隔离级别 × 灵活性」象限图
 2. 对于以下三个场景，分别推荐哪种方案？说明理由:
@@ -72,9 +72,9 @@
 
 ## 参考资料
 
-- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/code/virtualization/cuda_api_intercept.c` — CUDA API 拦截参考实现
-- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/第一部分：基础理论篇.md` — 概念与选型
-- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/第二部分：虚拟化技术篇.md` — 三种虚拟化实现
-- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/hami/hmai-gpu-resources-guide.md` — HAMi 手册
-- AI-fundamentals: `04_cloud_native_ai_platform/gpu_manager/hami/KAI_vs_HAMi_Comparison.md` — KAI vs HAMi
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/gpu_manager/code/virtualization/cuda_api_intercept.c) — CUDA API 拦截参考实现
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/gpu_manager/第一部分：基础理论篇.md) — 概念与选型
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/gpu_manager/第二部分：虚拟化技术篇.md) — 三种虚拟化实现
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/gpu_manager/hami/hmai-gpu-resources-guide.md) — HAMi 手册
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/gpu_manager/hami/KAI_vs_HAMi_Comparison.md) — KAI vs HAMi
 - [HAMi GitHub](https://github.com/Project-HAMi/HAMi)

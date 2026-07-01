@@ -19,7 +19,7 @@
 ```python
 # kv_calc.py
 import sys
-sys.path.insert(0, '/Users/wangtianqing/Project/wechat/AI-fundamentals/09_inference_system/memory_calc')
+sys.path.insert(0, 'https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/memory_calc')
 
 def calc_kv_cache(n_layers, n_kv_heads, d_head, seq_len, batch, dtype_bytes=2):
     """计算 KV Cache 显存 (GB)"""

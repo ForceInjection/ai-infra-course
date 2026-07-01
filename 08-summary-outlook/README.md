@@ -50,5 +50,5 @@
 ## 参考来源
 
 - 本课程模块 1-7 的全部 syllabus / ppt-outline / code
-- AI-fundamentals: `08_agentic_system/agent_infra/`, `11_ai_native_everything/`
-- AI-fundamentals: `01_hardware_architecture/superchips/nvidia_gb300.md`
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/08_agentic_system/agent_infra/), `11_ai_native_everything/`
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/01_hardware_architecture/superchips/nvidia_gb300.md)

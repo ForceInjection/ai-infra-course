@@ -117,11 +117,11 @@ printf("Warp Size: %d\n", prop.warpSize);
 
 ## 参考资料
 
-- AI-fundamentals: `01_hardware_architecture/nvidia/understand_gpu_architecture/` — GPU 架构深入
-- AI-fundamentals: `01_hardware_architecture/performance/ai_latency_pyramid.md` — 延迟金字塔
-- AI-fundamentals: `02_gpu_programming/02_cuda/` — CUDA 编程全套教程
-- AI-fundamentals: `02_gpu_programming/04_profiling/01_nvbandwidth_best_practices.md` — GPU 带宽测量
-- AI-fundamentals: `02_gpu_programming/04_profiling/06_nsight_compute_cli.md` — Nsight Compute CLI
-- AI-fundamentals: `02_gpu_programming/04_profiling/07_nsight_systems_cli.md` — Nsight Systems CLI
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/01_hardware_architecture/nvidia/understand_gpu_architecture/) — GPU 架构深入
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/01_hardware_architecture/performance/ai_latency_pyramid.md) — 延迟金字塔
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/02_gpu_programming/02_cuda/) — CUDA 编程全套教程
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/02_gpu_programming/04_profiling/01_nvbandwidth_best_practices.md) — GPU 带宽测量
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/02_gpu_programming/04_profiling/06_nsight_compute_cli.md) — Nsight Compute CLI
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/02_gpu_programming/04_profiling/07_nsight_systems_cli.md) — Nsight Systems CLI
 - [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)
 - [CUDA-Learn-Notes](https://github.com/xlite-dev/CUDA-Learn-Notes) — 200+ 优化 kernel 示例

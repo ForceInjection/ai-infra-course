@@ -72,9 +72,9 @@
 
 ## 参考来源
 
-- AI-fundamentals: `09_inference_system/vllm/routing/vllm_router.md` — vLLM Router 架构分析
-- AI-fundamentals: `09_inference_system/vllm/routing/vllm_semantic_router_deep_dive.md` — Semantic Router 深度剖析
-- AI-fundamentals: `09_inference_system/deployment/deepseek_v3_moe_vllm_h20_deployment.md` — DeepSeek V3 H20 部署方案
-- AI-fundamentals: `09_inference_system/reference_design/06-推理服务架构设计.md` — 推理服务架构设计
-- AI-fundamentals: `09_inference_system/reference_design/05-性能评估指标体系.md` — 性能指标体系
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/vllm/routing/vllm_router.md) — vLLM Router 架构分析
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/vllm/routing/vllm_semantic_router_deep_dive.md) — Semantic Router 深度剖析
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/deployment/deepseek_v3_moe_vllm_h20_deployment.md) — DeepSeek V3 H20 部署方案
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/reference_design/06-推理服务架构设计.md) — 推理服务架构设计
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/reference_design/05-性能评估指标体系.md) — 性能指标体系
 - vLLM Router / Semantic Router Paper (NeurIPS 2025 MLForSys Workshop)

@@ -21,7 +21,7 @@
 
 ### Mac 环境搭建
 
-> 参考: cloud-native-dev `0_Introduction/Install/mac/` 安装脚本
+> 参考: [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev/blob/main/0_Introduction/Install/mac/) 安装脚本
 
 ```bash
 # 方案 1: 使用 Colima (推荐，免费)

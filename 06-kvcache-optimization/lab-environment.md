@@ -47,7 +47,7 @@ pip install lmcache
 
 ```bash
 # 如果已有克隆的 AI-fundamentals 仓库
-cp /Users/wangtianqing/Project/wechat/AI-fundamentals/09_inference_system/memory_calc/calculate_qwen3_memory.py .
+cp https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/memory_calc/calculate_qwen3_memory.py .
 ```
 
 ---

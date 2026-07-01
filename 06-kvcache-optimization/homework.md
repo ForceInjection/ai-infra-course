@@ -142,9 +142,9 @@ export LMCACHE_CONFIG='{
 
 ## 参考资料
 
-- AI-fundamentals: `09_inference_system/kv_cache/` 全套 KV Cache 技术文档
-- AI-fundamentals: `09_inference_system/memory_calc/calculate_qwen3_memory.py` — 显存计算脚本
-- AI-fundamentals: `09_inference_system/memory_calc/calculate_deepseek_v4_memory.py`
-- AI-fundamentals: `09_inference_system/kv_cache/01_concepts/capacity_planning/glm5_kv_cache_capacity_planning.md`
-- AI-fundamentals: `09_inference_system/kv_cache/01_concepts/capacity_planning/kv_cache_roi.md`
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/kv_cache/) 全套 KV Cache 技术文档
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/memory_calc/calculate_qwen3_memory.py) — 显存计算脚本
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/memory_calc/calculate_deepseek_v4_memory.py)
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/kv_cache/01_concepts/capacity_planning/glm5_kv_cache_capacity_planning.md)
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/kv_cache/01_concepts/capacity_planning/kv_cache_roi.md)
 - [LMCache GitHub](https://github.com/LMCache/LMCache)

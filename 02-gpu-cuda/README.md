@@ -56,5 +56,5 @@
 ## 参考来源
 
 - [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals) — GPU 硬件架构、CUDA 编程教程、性能分析
-- [nano-vllm](https://github.com/GeeeekExplorer/nano-vllm) — 精简版 vLLM 实现
+- [nano-vllm](https://github.com/ForceInjection/nano-vllm) — 精简版 vLLM 实现
 - [CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/cuda-c-programming-guide/) — NVIDIA 官方

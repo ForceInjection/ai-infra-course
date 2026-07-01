@@ -137,7 +137,7 @@
 
 ## 参考资料
 
-- **nano-vllm 仓库**: https://github.com/ForceInjection/nano-vllm (本地路径: `~/Project/study/nano-vllm/`)
+- **nano-vllm 仓库**: https://github.com/ForceInjection/nano-vllm
 - **nano-vllm 8 课在线课程**: https://forceinjection.github.io/nano-vllm/
   - 01: LLM generate 和 step
   - 02: Sequence 生命周期
@@ -147,5 +147,5 @@
   - 06: Decode 与 Block Tables
   - 07: Attention KV Cache 与分支 (PagedAttention 实现)
   - 08: 优化全景图 (CUDA Graph, Tensor Parallel, Prefix Caching)
-- AI-fundamentals: `09_inference_system/vllm/` 全套 vLLM 分析
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/vllm/) 全套 vLLM 分析
 - vLLM Paper: "Efficient Memory Management for Large Language Model Serving with PagedAttention" (SOSP 2023)

@@ -23,7 +23,7 @@
 
 ## 任务 2: K8s GPU 设备管理机制分析 (必做)
 
-阅读 AI-fundamentals `04_cloud_native_ai_platform/k8s/02_nvidia_k8s_device_plugin_analysis.md`，回答：
+阅读 [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/k8s/02_nvidia_k8s_device_plugin_analysis.md)，回答：
 
 1. Device Plugin 的 `ListAndWatch` 和 `Allocate` 接口各自做什么？画出它们的调用时序图。
 2. 如果某个节点的 GPU 被所有 Pod 占满，新来的 Pod 声明 `nvidia.com/gpu: 1` 会发生什么？结合调度器流程解释。
@@ -92,6 +92,6 @@
 
 ## 参考资料
 
-- AI-fundamentals: `04_cloud_native_ai_platform/k8s/` 全部文件
+- [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/04_cloud_native_ai_platform/k8s/) 全部文件
 - [Kubernetes DRA Documentation](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/)
 - [Kueue Documentation](https://kueue.sigs.k8s.io/docs/)

@@ -4,7 +4,7 @@
 
 ### 题目描述
 
-Docker 的本质 = Namespace (隔离) + Cgroup (限制) + UnionFS (分层存储)。本实验从这三个底层技术出发，逐步构建对容器的理解，最后体验 Docker 如何把它们组合在一起。
+**Docker 的本质** = Namespace (隔离) + Cgroup (限制) + UnionFS (分层存储)。本实验从这三个底层技术出发，逐步构建对容器的理解，最后体验 Docker 如何把它们组合在一起。
 
 ### 预计时间
 
@@ -20,7 +20,7 @@ Docker 的本质 = Namespace (隔离) + Cgroup (限制) + UnionFS (分层存储)
 
 ## 实验 1: Namespace 进程隔离 (8 min)
 
-> 参考: cloud-native-dev `0_Introduction/面向云原生的 Linux 基础课程/demos/process_isolation_demo.sh` 和 `1.0_Docker/Cgroup 和 Namespace 学习教程.md` §2
+> 参考: [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev/blob/main/0_Introduction/%E9%9D%A2%E5%90%91%E4%BA%91%E5%8E%9F%E7%94%9F%E7%9A%84%20Linux%20%E5%9F%BA%E7%A1%80%E8%AF%BE%E7%A8%8B/demos/process_isolation_demo.sh) 和 `1.0_Docker/Cgroup 和 Namespace 学习教程.md` §2
 
 ### Step 1: 查看当前进程的 Namespace
 
@@ -66,7 +66,7 @@ sudo ls -la /proc/<PID>/ns/
 
 ## 实验 2: Cgroup 资源限制 + OverlayFS 分层存储 (10 min)
 
-> 参考: cloud-native-dev `1.0_Docker/Cgroup 和 Namespace 学习教程.md` §4 和 `1.0_Docker/Union Filesystem 学习教程.md` §2
+> 参考: [cloud-native-dev](https://github.com/ForceInjection/cloud-native-dev/blob/main/1.0_Docker/Cgroup%20%E5%92%8C%20Namespace%20%E5%AD%A6%E4%B9%A0%E6%95%99%E7%A8%8B.md) §4 和 `1.0_Docker/Union Filesystem 学习教程.md` §2
 
 ### Part A: Cgroup 内存限制 (5 min)
 
@@ -190,7 +190,7 @@ cd .. && rm -rf docker-layer-demo
 
 ---
 
-## 讲解要点
+## 要点讲解
 
 ### 1. 容器 = Namespace + Cgroup + UnionFS
 

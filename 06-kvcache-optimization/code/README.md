@@ -4,8 +4,8 @@
 
 | 文件                              | 内容                                                   | 对应 PPT             | 来源                           |
 | --------------------------------- | ------------------------------------------------------ | -------------------- | ------------------------------ |
-| `calculate_qwen3_memory.py`       | 通用 GQA/MHA 模型显存估算器                            | 第 6–7 页 [手算]     | AI-fundamentals `memory_calc/` |
-| `calculate_deepseek_v4_memory.py` | DeepSeek V4 专用估算器 (K=V共享/MLA/Indexer Cache/MoE) | 第 8 页 [跨模型对比] | AI-fundamentals `memory_calc/` |
+| `calculate_qwen3_memory.py`       | 通用 GQA/MHA 模型显存估算器                            | 第 6–7 页 [手算]     | [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/memory_calc/) |
+| `calculate_deepseek_v4_memory.py` | DeepSeek V4 专用估算器 (K=V共享/MLA/Indexer Cache/MoE) | 第 8 页 [跨模型对比] | [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/memory_calc/) |
 | `qwen3_06b_config.json`           | Qwen3-0.6B 模型配置样例                                | —                    | HuggingFace config.json        |
 | `deepseek_v4_pro_config.json`     | DeepSeek V4 Pro 配置样例                               | —                    | HuggingFace config.json        |
 

@@ -6,8 +6,7 @@
 
 内容地址：
 
-- 本地：/Users/wangtianqing/Project/wechat/AI-fundamentals/
-- Github：https://github.com/ForceInjection/AI-fundamentals
+- Github: https://github.com/ForceInjection/AI-fundamentals
 
 ## 2. 课程大纲
 
