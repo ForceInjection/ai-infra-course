@@ -1,113 +1,130 @@
 /*
- * 模块2 高级：GPU 内存管理 — CPU↔GPU 带宽测试 (CUDA C 版本)
+ * 模块 2b: GPU 内存管理 — CPU↔GPU DMA 带宽测试 (CUDA C 版本)
  *
  * 编译: nvcc -O2 02_dma_bandwidth.cu -o dma_bandwidth
  * 运行: ./dma_bandwidth
  *
- * 测量 pageable (malloc) vs pinned (cudaMallocHost) 的 DMA 传输带宽。
- * 使用 CUDA Events 精确计时，对比 H2D 和 D2H 两个方向。
+ * 教学要点:
+ *   1. Pinned (cudaMallocHost) vs Pageable (malloc): DMA 传输路径不同
+ *   2. Pageable: 每次 cudaMemcpy 需内核遍历页表 → lock 页面 → scatter-gather
+ *   3. Pinned: 页面预先锁定，DMA 引擎直传物理地址 → 跳过一次页表遍历
+ *   4. 结果: pinned 比 pageable 快 2-3× (PCIe 越快，差距越大)
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda_runtime.h>
 
-#define CHECK(call) { \
-    cudaError_t err = call; \
-    if (err != cudaSuccess) { \
-        fprintf(stderr, "CUDA error at %s:%d — %s\n", __FILE__, __LINE__, \
-                cudaGetErrorString(err)); \
-        exit(1); \
-    } \
+#define CUDA_CHECK(call) {                                              \
+    cudaError_t err = call;                                             \
+    if (err != cudaSuccess) {                                           \
+        fprintf(stderr, "CUDA Error at %s:%d: %s\n",                    \
+                __FILE__, __LINE__, cudaGetErrorString(err));           \
+        exit(1);                                                        \
+    }                                                                    \
 }
 
-// 测试指定大小的 pageable 和 pinned 传输
-void test_one(size_t bytes, const char *dir_name,
+void test_one(double size_gb, size_t bytes, const char *dir_name,
               cudaMemcpyKind kind, int warmup, int iters) {
     void *h_pageable, *h_pinned, *d_buf;
 
-    // 分配 pageable (普通 malloc)
+    // Pageable: 普通 malloc，页面可能被换出，每次 DMA 需页表遍历
     h_pageable = malloc(bytes);
     if (!h_pageable) { printf("  malloc(%.1f GB) failed\n", bytes/1e9); return; }
 
-    // 分配 pinned (页锁定)
-    CHECK(cudaMallocHost(&h_pinned, bytes));
-
-    // 分配 device 内存
-    CHECK(cudaMalloc(&d_buf, bytes));
+    // Pinned: cudaMallocHost 锁定的页面，DMA 引擎直传
+    CUDA_CHECK(cudaMallocHost(&h_pinned, bytes));
+    CUDA_CHECK(cudaMalloc(&d_buf, bytes));
 
     cudaEvent_t start, stop;
-    CHECK(cudaEventCreate(&start));
-    CHECK(cudaEventCreate(&stop));
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
 
-    // ── Pageable ──
+    // --- Pageable ---
     void *src = (kind == cudaMemcpyHostToDevice) ? h_pageable : d_buf;
     void *dst = (kind == cudaMemcpyHostToDevice) ? d_buf : h_pageable;
     for (int i = 0; i < warmup; i++)
-        CHECK(cudaMemcpy(dst, src, bytes, kind));
-    CHECK(cudaDeviceSynchronize());
+        CUDA_CHECK(cudaMemcpy(dst, src, bytes, kind));
+    CUDA_CHECK(cudaDeviceSynchronize());
 
-    CHECK(cudaEventRecord(start, 0));
+    CUDA_CHECK(cudaEventRecord(start, 0));
     for (int i = 0; i < iters; i++)
-        CHECK(cudaMemcpy(dst, src, bytes, kind));
-    CHECK(cudaEventRecord(stop, 0));
-    CHECK(cudaEventSynchronize(stop));
+        CUDA_CHECK(cudaMemcpy(dst, src, bytes, kind));
+    CUDA_CHECK(cudaEventRecord(stop, 0));
+    CUDA_CHECK(cudaEventSynchronize(stop));
 
     float ms_pageable;
-    CHECK(cudaEventElapsedTime(&ms_pageable, start, stop));
+    CUDA_CHECK(cudaEventElapsedTime(&ms_pageable, start, stop));
     double bw_pageable = (bytes * iters) / (ms_pageable / 1000.0) / 1e9;
 
-    // ── Pinned ──
+    // --- Pinned ---
     src = (kind == cudaMemcpyHostToDevice) ? h_pinned : d_buf;
     dst = (kind == cudaMemcpyHostToDevice) ? d_buf : h_pinned;
     for (int i = 0; i < warmup; i++)
-        CHECK(cudaMemcpy(dst, src, bytes, kind));
-    CHECK(cudaDeviceSynchronize());
+        CUDA_CHECK(cudaMemcpy(dst, src, bytes, kind));
+    CUDA_CHECK(cudaDeviceSynchronize());
 
-    CHECK(cudaEventRecord(start, 0));
+    CUDA_CHECK(cudaEventRecord(start, 0));
     for (int i = 0; i < iters; i++)
-        CHECK(cudaMemcpy(dst, src, bytes, kind));
-    CHECK(cudaEventRecord(stop, 0));
-    CHECK(cudaEventSynchronize(stop));
+        CUDA_CHECK(cudaMemcpy(dst, src, bytes, kind));
+    CUDA_CHECK(cudaEventRecord(stop, 0));
+    CUDA_CHECK(cudaEventSynchronize(stop));
 
     float ms_pinned;
-    CHECK(cudaEventElapsedTime(&ms_pinned, start, stop));
+    CUDA_CHECK(cudaEventElapsedTime(&ms_pinned, start, stop));
     double bw_pinned = (bytes * iters) / (ms_pinned / 1000.0) / 1e9;
 
-    printf("%5.1fGB %4s  %8.2f GB/s  %8.2f GB/s  %6.1fx  +%6.1f GB/s\n",
-           bytes / 1e9, dir_name,
-           bw_pageable, bw_pinned,
-           bw_pinned / bw_pageable, bw_pinned - bw_pageable);
+    double ratio = bw_pinned / bw_pageable;
+    printf("  %4.1f GB  %-4s  %8.2f GB/s  %8.2f GB/s   %5.1fx   +%6.1f GB/s\n",
+           size_gb, dir_name,
+           bw_pageable, bw_pinned, ratio, bw_pinned - bw_pageable);
 
-    // 清理
-    CHECK(cudaEventDestroy(start));
-    CHECK(cudaEventDestroy(stop));
-    CHECK(cudaFree(d_buf));
-    CHECK(cudaFreeHost(h_pinned));
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+    CUDA_CHECK(cudaFree(d_buf));
+    CUDA_CHECK(cudaFreeHost(h_pinned));
     free(h_pageable);
 }
 
 int main() {
-    // 打印 GPU 信息
     int dev;
-    CHECK(cudaGetDevice(&dev));
+    CUDA_CHECK(cudaGetDevice(&dev));
     cudaDeviceProp prop;
-    CHECK(cudaGetDeviceProperties(&prop, dev));
-    printf("GPU: %s (Compute %d.%d, %d SMs)\n\n",
-           prop.name, prop.major, prop.minor,
-           prop.multiProcessorCount);
+    CUDA_CHECK(cudaGetDeviceProperties(&prop, dev));
+
+    printf("===========================================================\n");
+    printf("  CPU-GPU DMA Bandwidth Test (pageable vs pinned)\n");
+    printf("  GPU: %s (Compute %d.%d, %d SMs)\n",
+           prop.name, prop.major, prop.minor, prop.multiProcessorCount);
+    printf("===========================================================\n\n");
 
     double sizes_gb[] = {0.5, 1.0, 2.0, 4.0};
     int num_sizes = sizeof(sizes_gb) / sizeof(sizes_gb[0]);
     int warmup = 3, iters = 10;
 
-    printf(" Size    Dir    Pageable      Pinned     Ratio    Pin-page\n");
-    printf("-----------------------------------------------------------\n");
+    printf("  Size     Dir   Pageable      Pinned     Ratio    Pin-page\n");
+    printf("  ---------------------------------------------------------\n");
 
     for (int i = 0; i < num_sizes; i++) {
         size_t bytes = (size_t)(sizes_gb[i] * 1024 * 1024 * 1024);
-        test_one(bytes, "H2D", cudaMemcpyHostToDevice, warmup, iters);
-        test_one(bytes, "D2H", cudaMemcpyDeviceToHost, warmup, iters);
+        test_one(sizes_gb[i], bytes, "H2D", cudaMemcpyHostToDevice, warmup, iters);
+        test_one(sizes_gb[i], bytes, "D2H", cudaMemcpyDeviceToHost, warmup, iters);
     }
+
+    printf("\n");
+    printf("--- 思考题 ---\n");
+    printf("1. 为什么 Pinned 比 Pageable 快？\n");
+    printf("   -> Pageable 每次 cudaMemcpy 都要遍历页表、逐页锁定\n");
+    printf("   -> Pinned (cudaMallocHost) 预先锁定，DMA 引擎直传物理地址\n\n");
+    printf("2. 为什么 D2H 比 H2D 慢？\n");
+    printf("   -> D2H 时 CPU 端需要将数据写入 pageable buffer（页表遍历）\n");
+    printf("   -> 或等待 pinned buffer 的 DMA 完成（总线仲裁开销）\n\n");
+    printf("3. Pinned 内存的代价是什么？\n");
+    printf("   -> 占用物理页面，不能 swap；分配过多会导致系统内存不足\n");
+    printf("   -> 建议 pinned 内存总量 < 物理内存的 50%%\n\n");
+    printf("4. 这和 vLLM 的 KV Cache 有什么关系？\n");
+    printf("   -> KV Cache 在 GPU HBM 中，不需要 H2D/D2H（已在 Device 端）\n");
+    printf("   -> 但模型权重加载时，pinned memory 可以加速 CPU→GPU 传输\n");
+
     return 0;
 }

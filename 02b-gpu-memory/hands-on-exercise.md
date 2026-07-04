@@ -24,15 +24,17 @@ python3 01_dma_bandwidth.py
 ```text
 实测环境: 8×H100 80GB HBM3, PCIe Gen5 x16
 
-Size (GB) | H2D pageable | H2D pinned |  Ratio  | D2H pageable | D2H pinned |  Ratio
-----------|--------------|------------|---------|-------------|------------|--------
-    0.5   |   21.8 GB/s  |  55.1 GB/s |  2.5×   |   13.6 GB/s  |  53.6 GB/s |  3.9×
-    1.0   |   21.8 GB/s  |  55.1 GB/s |  2.5×   |   13.9 GB/s  |  53.6 GB/s |  3.9×
-    2.0   |   21.8 GB/s  |  55.1 GB/s |  2.5×   |   13.4 GB/s  |  52.5 GB/s |  3.9×
-    4.0   |   21.8 GB/s  |  55.1 GB/s |  2.5×   |   13.7 GB/s  |  52.1 GB/s |  3.8×
+ Size   Dir    Pageable      Pinned     Ratio
+------------------------------------------------
+ 0.5GB  H2D     17.0 GB/s   54.7 GB/s    3.2x
+ 1.0GB  H2D     21.3 GB/s   54.8 GB/s    2.6x
+ 2.0GB  H2D     21.4 GB/s   54.8 GB/s    2.6x
+ 4.0GB  H2D     21.4 GB/s   54.9 GB/s    2.6x
+ 0.5GB  D2H     14.6 GB/s   46.8 GB/s    3.2x
+ 1.0GB  D2H     16.7 GB/s   47.0 GB/s    2.8x
 ```
 
-> Pageable H2D ~22 GB/s（CPU 瓶颈，不随 PCIe 升级），Pinned ~55 GB/s（DMA 直传）。D2H pageable 比 H2D 更慢 — CPU 端接收数据时页表遍历开销更大。
+> Pinned H2D ~55 GB/s（DMA 直传，86% PCIe 效率），Pageable ~21 GB/s（CPU 页表遍历瓶颈）。D2H 比 H2D 更慢 — CPU 端接收开销更大。
 
 ## Step 3: 分析结果
 

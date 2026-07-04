@@ -10,7 +10,7 @@
 ## 环境要求
 
 - NVIDIA GPU (Compute Capability ≥ 7.0)
-- CUDA Toolkit ≥ 12.0（需要 `libcudart.so`）
+- CUDA Toolkit ≥ 12.8（需要 `libcudart.so`）
 - Python ≥ 3.8
 
 ## 运行方法
@@ -39,37 +39,36 @@ Link: PCIe Gen5 x16
 
  Size   Dir    Pageable      Pinned     Ratio    Pin-page
 ------------------------------------------------------------------
- 0.5GB  H2D     21.77 GB/s  55.06 GB/s    2.5x  +33.29 GB/s
- 0.5GB  D2H     13.56 GB/s  53.56 GB/s    3.9x  +40.00 GB/s
- 1.0GB  H2D     21.77 GB/s  55.10 GB/s    2.5x  +33.33 GB/s
- 1.0GB  D2H     13.85 GB/s  53.59 GB/s    3.9x  +39.74 GB/s
- 2.0GB  H2D     21.75 GB/s  55.11 GB/s    2.5x  +33.36 GB/s
- 2.0GB  D2H     13.39 GB/s  52.52 GB/s    3.9x  +39.13 GB/s
- 4.0GB  H2D     21.78 GB/s  55.11 GB/s    2.5x  +33.33 GB/s
- 4.0GB  D2H     13.67 GB/s  52.13 GB/s    3.8x  +38.46 GB/s
+ 0.5GB  H2D     16.95 GB/s  54.72 GB/s    3.2x  +37.78 GB/s
+ 0.5GB  D2H     14.60 GB/s  46.75 GB/s    3.2x  +32.15 GB/s
+ 1.0GB  H2D     21.34 GB/s  54.78 GB/s    2.6x  +33.44 GB/s
+ 1.0GB  D2H     16.74 GB/s  46.97 GB/s    2.8x  +30.23 GB/s
+ 2.0GB  H2D     21.37 GB/s  54.83 GB/s    2.6x  +33.46 GB/s
+ 2.0GB  D2H     16.75 GB/s  47.26 GB/s    2.8x  +30.51 GB/s
+ 4.0GB  H2D     21.37 GB/s  54.87 GB/s    2.6x  +33.50 GB/s
+ 4.0GB  D2H     16.72 GB/s  48.01 GB/s    2.9x  +31.29 GB/s
 
 --- Summary (H2D) ---
-Pageable:  21.8 GB/s
-Pinned:    55.1 GB/s
-Ratio:     2.5x
+Pageable:  20.3 GB/s
+Pinned:    54.8 GB/s
+Ratio:     2.7x
 
 Theoretical (PCIe Gen5 x16): ~64 GB/s
 Pinned efficiency:   86%
-Pageable efficiency: 34%
+Pageable efficiency: 32%
 
 --- Summary (D2H) ---
-Pageable:  13.6 GB/s            ← D2H pageable 比 H2D 更慢 (CPU 端接收开销)
-Pinned:    52.9 GB/s
-Ratio:     3.9x
+Pageable:  16.2 GB/s            ← D2H pageable 比 H2D 更慢
+Pinned:    47.2 GB/s
+Ratio:     2.9x
 ```
 
 ## 关键观察
 
-1. **Pageable H2D 不随 PCIe 升级** — 瓶颈在 CPU 页表遍历 (21.8 GB/s)
-2. **Pinned H2D 接近 PCIe 理论值** — DMA 引擎直传 (55.1 GB/s, 86% 效率)
-3. **D2H pageable 比 H2D 更慢** — 13.6 vs 21.8 GB/s，CPU 端接收开销更大
-4. **Gen5 下 H2D pinned/pageable = 2.5×** — PCIe 越快，pinned 优势越大
-5. **D2H pageable 开销最大** — ratio 达 3.9×，CPU 接收页表遍历比发送更慢
+1. **Pageable H2D 不随 PCIe 升级** — 瓶颈在 CPU 页表遍历 (~21 GB/s)
+2. **Pinned H2D 接近 PCIe 理论值** — DMA 引擎直传 (~55 GB/s, 86% 效率)
+3. **D2H pageable 比 H2D 更慢** — ~16 vs ~21 GB/s，CPU 端接收开销更大
+4. **Gen5 下 H2D pinned/pageable ≈ 2.7×** — PCIe 越快，pinned 优势越大
 
 ## 原理
 

@@ -5,7 +5,7 @@
 | 项目         | 最低配置                              |
 | ------------ | ------------------------------------- |
 | GPU          | NVIDIA GPU (Compute Capability ≥ 7.0) |
-| CUDA Toolkit | ≥ 12.0                                |
+| CUDA Toolkit | ≥ 12.8                                |
 | Python       | ≥ 3.8                                 |
 | 操作系统     | Linux (需要 `libcudart.so`)           |
 

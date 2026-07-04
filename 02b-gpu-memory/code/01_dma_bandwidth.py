@@ -11,8 +11,8 @@
 预期 (PCIe Gen4 x16):
   Pageable H2D: ~22 GB/s | Pinned H2D: ~26 GB/s | Ratio: ~1.2×
 
-预期 (PCIe Gen5 x16):
-  Pageable H2D: ~22 GB/s | Pinned H2D: ~55 GB/s | Ratio: ~2.5×
+预期 (PCIe Gen5 x16, H100 实测):
+  Pageable H2D: ~21 GB/s | Pinned H2D: ~55 GB/s | Ratio: ~2.7×
   (pageable 瓶颈在 CPU，不随 PCIe 代际升级)
 
 用法: python3 01_dma_bandwidth.py [--sizes 0.5 1 2 4]
@@ -289,6 +289,19 @@ def main():
         print(f"Pinned:    {avg_pin_d2h:.1f} GB/s")
         ratio_color = GREEN if 1.7 <= avg_ratio_d2h <= 2.5 else YELLOW
         print(f"Ratio:     {ratio_color}{avg_ratio_d2h:.1f}x{RESET}")
+
+    print()
+    print(f"{CYAN}--- 思考题 ---{RESET}")
+    print("1. 为什么 Pinned 比 Pageable 快?")
+    print("   -> Pageable 每次 cudaMemcpy 都要遍历页表、逐页锁定")
+    print("   -> Pinned (cudaMallocHost) 预先锁定，DMA 引擎直传物理地址")
+    print()
+    print("2. Pinned 内存的代价是什么?")
+    print("   -> 占用物理页面，不能 swap；分配过多会导致系统内存不足")
+    print()
+    print("3. 这和 vLLM 的 KV Cache 有什么关系?")
+    print("   -> KV Cache 在 GPU HBM 中，不需要 H2D/D2H（已在 Device 端）")
+    print("   -> 但模型权重首次加载时，pinned memory 可加速 CPU->GPU 传输")
 
 
 if __name__ == "__main__":
