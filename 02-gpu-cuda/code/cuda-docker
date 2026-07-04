@@ -1,6 +1,6 @@
 #!/bin/bash
-# CUDA 编译与运行脚本 (通过 Docker 容器)
-# 使用 lmcache/vllm-openai:v0.4.7-cu129 镜像 (包含 CUDA 12.9 + nvcc)
+# CUDA 编译与运行脚本 (通过 Docker 容器, 无需本地安装 CUDA Toolkit)
+# 使用 nvidia/cuda:12.8.0-devel-ubuntu22.04 镜像 (包含 CUDA 12.8 + nvcc)
 #
 # 用法:
 #   ./cuda-docker make         编译
@@ -8,8 +8,8 @@
 #   ./cuda-docker all          编译并运行所有
 #   ./cuda-docker shell        进入容器的 bash
 
-IMAGE="lmcache/vllm-openai:v0.4.7-cu129"
-CODE_DIR="/root/ai-infra-course/02-gpu-cuda"
+IMAGE="nvidia/cuda:12.8.0-devel-ubuntu22.04"
+CODE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 case "${1:-all}" in
     make)

@@ -5,8 +5,15 @@
 #       make profile   使用 Nsight Compute 分析
 
 NVCC = nvcc
-ARCH = sm_80
-NVCCFLAGS = -O2 -arch=$(ARCH)
+# GPU 架构: 自动检测 (nvidia-smi) 或手动覆盖 (make SM=89)。
+# 无 GPU 时默认 sm_70，编译产物仅用于语法检查，无法在本机运行。
+SM_DETECT := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '.')
+ifeq ($(SM_DETECT),)
+  SM = 70
+else
+  SM = $(SM_DETECT)
+endif
+NVCCFLAGS = -O2 -arch=sm_$(SM)
 LDFLAGS =
 
 TARGETS = vec_add matmul_naive matmul_tiled device_query
