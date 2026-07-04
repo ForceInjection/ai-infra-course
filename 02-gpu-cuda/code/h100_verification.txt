@@ -1,0 +1,140 @@
+rm -f vec_add matmul_naive matmul_tiled device_query *.ncu-rep
+nvcc -O2 -arch=sm_90 01_vec_add.cu -o vec_add
+nvcc -O2 -arch=sm_90 02_matmul_naive.cu -o matmul_naive
+nvcc -O2 -arch=sm_90 03_matmul_tiled.cu -o matmul_tiled
+nvcc -O2 -arch=sm_90 04_device_query.cu -o device_query
+===== 1_device_query =====
+=========================================
+  GPU 设备查询
+  检测到 8 个 CUDA 设备
+=========================================
+
+=== GPU 0: NVIDIA H100 80GB HBM3 ===
+
+  计算能力:         9.0
+  SM 数量:          132
+  CUDA Cores (估算): 16896 (每个 SM 64 FP32 + 64 INT32 cores (A100 = 6912 total))
+  Warp Size:        32
+  Max Threads/Block: 1024
+  Max Threads/SM:   2048
+  Max Blocks/SM:    2
+
+  --- 内存 ---
+  Global Memory:    79.2 GB
+  Shared Memory/Block: 48 KB
+  Registers/Block:  65536
+  L2 Cache:         50.0 MB
+  Memory Clock:     2619 MHz
+  Memory Bus Width: 5120-bit
+  理论带宽:         3352.3 GB/s
+
+  --- 时钟 ---
+  GPU Clock:        1980 MHz
+
+  理论 FP32 峰值:   66.9 TFLOPS
+  理论带宽/峰值比:  19.96 (FLOPs/byte — Roofline Ridge Point)
+
+=== GPU 1: NVIDIA H100 80GB HBM3 ===
+
+  计算能力:         9.0
+  SM 数量:          132
+  CUDA Cores (估算): 16896 (每个 SM 64 FP32 + 64 INT32 cores (A100 = 6912 total))
+===== 2_vec_add =====
+=========================================
+  实验 1: 向量加法 - CPU vs GPU
+  N = 16777216 (16.8M), 数据量 = 201 MB
+=========================================
+
+[CPU] 串行计算 (for 循环) ...
+[CPU] 耗时: 34.51 ms
+
+[GPU] 并行计算 ...
+[GPU] 配置: 65536 blocks x 256 threads = 16777216 线程
+
+  H2D (CPU->GPU):      13.563 ms  ( 27.3%)
+  Kernel (GPU):         0.154 ms  (  0.3%)
+  D2H (GPU->CPU):      35.871 ms  ( 72.3%)
+  --------------------------------
+  总计:                49.601 ms
+
+  Kernel 有效带宽: 1303.7 GB/s
+  加速比 (GPU/CPU): 0.7x
+
+  正确性验证: 通过 (0 / 16777216 errors)
+
+--- 思考题 (对应 PPT 第 30-31 页) ---
+1. H2D + D2H 占总时间的 100%，Kernel 只占 0%
+   -> 为什么 GPU 整体比 CPU 还慢？数据传输的开销来自哪里？
+   -> (参考 PPT 第 22 页: PCIe Gen5 x16 = 128 GB/s vs HBM3 = 3.35 TB/s)
+
+2. 如果 N=1024 (数据量 ~12 KB)，GPU 还比 CPU 快吗？
+   -> 提示: 思考 kernel 启动开销 (~5-10 us) 和线程利用率
+
+3. Kernel 有效带宽 1304 GB/s vs H100 HBM3 理论带宽 3352 GB/s
+   -> 为什么差这么远？瓶颈是计算还是访存？
+   -> (参考 PPT 第 12 页: 延迟金字塔)
+
+===== 3_matmul_naive =====
+=========================================
+  实验 2: 矩阵乘法 — Naive (Global Memory)
+  M=1024, N=1024, K=1024
+=========================================
+
+[Naive] 耗时:           0.497 ms
+[Naive] 性能:           4319.6 GFLOPS
+[Naive] Arithmetic Intensity: 170.7 FLOPs/byte
+[Naive] 每个元素从 Global Memory 被读取次数: ~1024 次
+
+瓶颈分析:
+  向量加法的 AI: 0.083 FLOPs/byte → 带宽瓶颈
+  矩阵乘法 naive 的 AI: 170.7 FLOPs/byte
+  → 如果 AI < GPU 峰值 FLOPs/Bandwidth，则是带宽瓶颈
+  → 下一步: 用 Shared Memory 减少 Global Memory 访问
+===== 4_matmul_tiled =====
+===========================================================
+  实验 3: 矩阵乘法 - Naive vs Tiled (Shared Memory)
+  M=1024, N=1024, K=1024, TILE_SIZE=16
+===========================================================
+
+  矩阵大小: A[1024 x 1024] = 4.2 MB, B[1024 x 1024] = 4.2 MB, C[1024 x 1024] = 4.2 MB
+
+[1] Naive 版本 (仅 Global Memory)
+  耗时: 0.549 ms, 性能: 3913.3 GFLOPS
+  AI (Arithmetic Intensity): 0.2 FLOPs/byte
+  每个 K 维元素被 1024 个线程各读一次, 共 ~1024 次 Global Memory 读取
+
+[2] Tiled 版本 (Shared Memory, TILE=16)
+  耗时: 0.302 ms, 性能: 7122.6 GFLOPS
+  AI (Arithmetic Intensity): 256.0 FLOPs/byte
+  Global Memory 读取: A 和 B 各一次 (协作加载), 每个元素仅读 ~1 次
+
+--- 性能对比 ---
+  Naive (Global Mem):     0.549 ms,   3913.3 GFLOPS
+  Tiled (Shared Mem):     0.302 ms,   7122.6 GFLOPS
+  加速比: 1.8x
+
+  正确性验证: 通过 (最大误差: 0.000000)
+
+--- Shared Memory 与 Bank Conflict (参考 PPT 第 15 页: SM 内部结构) ---
+  Shared Memory 使用: 2048 bytes/block (2 tiles x 16 x 16 floats)
+  Bank Conflict: TILE=16 时 Bs 列访问 stride=64 bytes -> 16-way conflict
+  解决方案: __shared__ float Bs[TILE_SIZE][TILE_SIZE+1] (+1 列 padding)
+
+--- 思考题 ---
+1. Tiled 版本为什么比 Naive 快?
+   -> 对比 Global Memory 读取次数: Naive ~K 次/元素 vs Tiled ~1 次/元素
+   -> Shared Memory 延迟 ~20 cycles vs HBM ~600 cycles (PPT 第 12 页)
+
+2. TILE_SIZE 取多少最合适?
+   -> 每个 SM 的 Shared Memory 上限 48 KB (H100), 当前只用 2 KB
+   -> 尝试 TILE_SIZE=8 和 TILE_SIZE=32, 观察性能和 bank conflict 变化
+
+3. 理论峰值 ~67 TFLOPS (H100 FP32), 我们只做到 ~7 TFLOPS, 差距在哪?
+   -> 16-way bank conflict 吃掉了一部分性能
+   -> 还可以用 vectorized load (float4), double buffering 继续优化
+
+4. 什么时候 GPU 比 CPU 快?
+   -> AI > GPU 峰值 FLOPs/Bandwidth 时是计算瓶颈 (如矩阵乘法)
+   -> AI < GPU 峰值 FLOPs/Bandwidth 时是带宽瓶颈 (如向量加法)
+   -> H100 的 Roofline Ridge Point: 19.96 FLOPs/byte (来自 device_query)
+
