@@ -75,20 +75,20 @@ LD_PRELOAD=./libmymalloc.so python3 -c "x = [1]*1000"
 
 ```bash
 # 在容器内查看 GPU
-docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi
 
 # 查看容器内的 GPU 设备文件
-docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 ls -la /dev/nvidia*
+docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 ls -la /dev/nvidia*
 
 # 查看注入的环境变量
-docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 env | grep NVIDIA
+docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 env | grep NVIDIA
 ```
 
 ### Step 2: CUDA 编译环境验证 (2 min)
 
 ```bash
 # 用 devel 镜像编译并运行 CUDA 程序
-docker run --rm --gpus all -v $(pwd):/workspace nvidia/cuda:12.4.0-devel-ubuntu22.04 bash -c "
+docker run --rm --gpus all -v $(pwd):/workspace nvidia/cuda:12.8.0-devel-ubuntu22.04 bash -c "
 cd /workspace
 cat > test.cu << 'EOF'
 #include <stdio.h>
@@ -110,7 +110,7 @@ nvcc -o test test.cu && ./test
 ```bash
 # 编写最简单的 vLLM Dockerfile
 cat > Dockerfile << 'EOF'
-FROM nvidia/cuda:12.4.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04
 RUN apt-get update && apt-get install -y python3-pip && pip install vllm
 ENTRYPOINT ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 CMD ["--model", "Qwen/Qwen2.5-0.5B-Instruct", "--host", "0.0.0.0", "--port", "8000"]
@@ -141,7 +141,7 @@ docker history vllm-demo:v1
 
 ### 3. 容器镜像分层
 
-- `nvidia/cuda:12.4.0-base` → ~100MB (只有运行时库)
-- `nvidia/cuda:12.4.0-runtime` → ~600MB (+cuBLAS/cuFFT)
-- `nvidia/cuda:12.4.0-devel` → ~3GB (+nvcc+头文件)
+- `nvidia/cuda:12.8.0-base` → ~100MB (只有运行时库)
+- `nvidia/cuda:12.8.0-runtime` → ~600MB (+cuBLAS/cuFFT)
+- `nvidia/cuda:12.8.0-devel` → ~3GB (+nvcc+头文件)
 - 推理用 runtime，编译用 devel
