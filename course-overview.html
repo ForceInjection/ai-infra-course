@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>云原生 AI 基础设施：原理与实践</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif; background:#1A0F2E; color:#C8BEE0; line-height:1.5; }
+.container { width:100%; max-width:1400px; margin:0 auto; padding:0 20px; }
+
+/* hero */
+.hero { text-align:center; padding:48px 0 16px; }
+.hero h1 { font-size:2em; color:#FFFFFF; letter-spacing:-0.5px; }
+.hero .sub { font-size:0.9em; color:#8A7BB5; margin-top:6px; }
+
+/* section title */
+.section-title { font-size:1.15em; color:#FFFFFF; font-weight:700; text-align:center; margin:28px 0 14px; }
+
+/* stack */
+.stack-wrapper { width:100%; padding:20px 20px 24px; margin-bottom:8px; background:#231440; }
+.stack { display:flex; align-items:stretch; justify-content:center; background:#231440; border:1px solid #3A2D5C; border-radius:10px; padding:16px 8px; gap:0; overflow-x:auto; }
+.stack-item { display:flex; flex-direction:column; align-items:center; text-align:center; min-width:80px; padding:8px 4px; border-radius:8px; cursor:pointer; transition:background 0.2s; position:relative; flex-shrink:0; }
+.stack-item:hover { background:#2D1B55; }
+.stack-item .num { width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.75em; margin-bottom:6px; flex-shrink:0; }
+.stack-item .name { font-size:0.72em; color:#F8F6FB; font-weight:600; white-space:nowrap; }
+.stack-item .key { font-size:0.65em; color:#8A7BB5; margin-top:3px; line-height:1.3; }
+/* connection between two items */
+.stack-connector { display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0; min-width:62px; padding:0 2px; position:relative; }
+.stack-connector .conn-line { width:100%; height:2px; background:#432879; position:relative; }
+.stack-connector .conn-line::after { content:''; position:absolute; right:-1px; top:-3px; border:4px solid transparent; border-left:6px solid #432879; }
+.stack-connector .conn-label { font-size:0.58em; color:#614F96; margin-top:4px; white-space:nowrap; text-align:center; line-height:1.2; }
+
+/* layer colors — mapped to PPT theme accents */
+.m7 .num { background:#156082; color:#FFFFFF; }   /* accent1 blue-teal */
+.m4 .num { background:#0F9ED5; color:#FFFFFF; }   /* accent4 light blue */
+.m5 .num { background:#A02B93; color:#FFFFFF; }   /* accent5 purple */
+.m6 .num { background:#196B24; color:#FFFFFF; }   /* accent3 green */
+.m3 .num { background:#E97132; color:#FFFFFF; }   /* accent2 orange */
+.m2 .num { background:#156082; color:#FFFFFF; }   /* accent1 blue-teal */
+.m1 .num { background:#0E2841; color:#FFFFFF; }   /* dk2 deep navy */
+
+/* highlight */
+.stack-item.active { background:#2D1B55; outline:2px solid #E97132; outline-offset:-2px; }
+.card.active { border-color:#E97132; background:#2D1B55; }
+
+/* module cards */
+.modules { display:grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap:12px; padding-bottom:48px; }
+.card { background:#231440; border:1px solid #432879; border-radius:8px; padding:16px 18px; cursor:pointer; transition: border-color 0.15s, background 0.15s; }
+.card:hover { border-color:#614F96; }
+.card-num { font-size:0.65em; color:#4EA72E; font-weight:700; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
+.card-title { font-size:0.9em; color:#F8F6FB; font-weight:600; margin-bottom:3px; }
+.card-hook { font-size:0.78em; color:#C8BEE0; }
+.card-tags { display:flex; gap:6px; margin-top:8px; }
+.tag { display:inline-block; padding:1px 7px; border-radius:3px; font-size:0.67em; font-weight:600; }
+.tag-time { background:#0E2841; color:#8A7BB5; }
+.tag-code { background:#0E2841; color:#8A7BB5; }
+.tag-gpu-no { background:rgba(25,107,36,0.25); color:#4EA72E; }
+.tag-gpu-opt { background:rgba(15,158,213,0.2); color:#0F9ED5; }
+.tag-gpu-req { background:rgba(233,113,50,0.2); color:#E97132; }
+
+@media (max-width:700px) {
+  .hero h1 { font-size:1.4em; }
+  .modules { grid-template-columns:1fr; }
+  .stack-item { min-width:60px; padding:6px 4px; }
+  .stack-item .name { font-size:0.65em; }
+  .stack-item .key { display:none; }
+}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>云原生 AI 基础设施：原理与实践</h1>
+  <p class="sub">从 Linux 容器到推理服务平台 — 8 次课，一条完整的技术链路</p>
+</div>
+
+<div class="stack-wrapper">
+
+<div class="section-title">一个请求穿越 7 层</div>
+
+<div class="stack" id="stack">
+  <div class="stack-item m7" data-module="m7">
+    <div class="num">M7</div>
+    <div class="name">AI 网关</div>
+    <div class="key">认证 · 限流<br>Cache-Aware LB</div>
+  </div>
+  <div class="stack-connector">
+    <div class="conn-line"></div>
+    <div class="conn-label">路由决策<br>选择模型副本</div>
+  </div>
+  <div class="stack-item m4" data-module="m4">
+    <div class="num">M4</div>
+    <div class="name">K8s 调度</div>
+    <div class="key">Filter → Score<br>→ Bind</div>
+  </div>
+  <div class="stack-connector">
+    <div class="conn-line"></div>
+    <div class="conn-label">调度到节点<br>分配 GPU 设备</div>
+  </div>
+  <div class="stack-item m5" data-module="m5">
+    <div class="num">M5</div>
+    <div class="name">vLLM 推理</div>
+    <div class="key">PagedAttention<br>Block Table</div>
+  </div>
+  <div class="stack-connector">
+    <div class="conn-line"></div>
+    <div class="conn-label">每个 Token<br>触发 Attention Kernel</div>
+  </div>
+  <div class="stack-item m6" data-module="m6">
+    <div class="num">M6</div>
+    <div class="name">KV Cache</div>
+    <div class="key">FP8 · Prefix<br>Offloading</div>
+  </div>
+  <div class="stack-connector">
+    <div class="conn-line"></div>
+    <div class="conn-label">Kernel 下发<br>cuLaunchKernel 等 CUDA API</div>
+  </div>
+  <div class="stack-item m3" data-module="m3">
+    <div class="num">M3</div>
+    <div class="name">GPU 虚拟化</div>
+    <div class="key">LD_PRELOAD<br>CUDA API 拦截</div>
+  </div>
+  <div class="stack-connector">
+    <div class="conn-line"></div>
+    <div class="conn-label">拦截后放行<br>到真实 CUDA Driver</div>
+  </div>
+  <div class="stack-item m2" data-module="m2">
+    <div class="num">M2</div>
+    <div class="name">CUDA</div>
+    <div class="key">SM Tensor Core<br>HBM 3.35 TB/s</div>
+  </div>
+  <div class="stack-connector">
+    <div class="conn-line"></div>
+    <div class="conn-label">指令执行在<br>GPU 硬件上</div>
+  </div>
+  <div class="stack-item m1" data-module="m1">
+    <div class="num">M1</div>
+    <div class="name">Linux 容器</div>
+    <div class="key">Namespace<br>CTK 设备注入</div>
+  </div>
+</div>
+
+</div>
+
+<div class="container">
+
+<div class="section-title">8 个模块 · 点击联动</div>
+
+<div class="modules" id="modules">
+
+<div class="card" data-module="m1">
+  <div class="card-num">Module 1 · 90min</div>
+  <div class="card-title">Linux 基础与容器技术入门</div>
+  <div class="card-hook">怎么把应用和 GPU 驱动打包在一起？Namespace · Cgroup · OverlayFS</div>
+  <div class="card-tags">
+    <span class="tag tag-code">Bash ×4</span>
+    <span class="tag tag-gpu-no">无 GPU</span>
+  </div>
+</div>
+
+<div class="card" data-module="m2">
+  <div class="card-num">Module 2 · 90min</div>
+  <div class="card-title">GPU 硬件架构与 CUDA 编程入门</div>
+  <div class="card-hook">GPU 为什么比 CPU 快 100 倍？CUDA 线程 → Shared Memory Tiling</div>
+  <div class="card-tags">
+    <span class="tag tag-code">CUDA C ×4</span>
+    <span class="tag tag-gpu-req">需要 GPU</span>
+  </div>
+</div>
+
+<div class="card" data-module="m2b">
+  <div class="card-num">Module 2b · ~18min</div>
+  <div class="card-title">GPU 内存管理 (高级)</div>
+  <div class="card-hook">Pinned 55 GB/s vs Pageable 21 GB/s — 2.7× 的 DMA 带宽差距</div>
+  <div class="card-tags">
+    <span class="tag tag-code">Python + CUDA C</span>
+    <span class="tag tag-gpu-req">需要 GPU</span>
+  </div>
+</div>
+
+<div class="card" data-module="m3">
+  <div class="card-num">Module 3 · 90min</div>
+  <div class="card-title">GPU 虚拟化与容器化实践</div>
+  <div class="card-hook">一张 A100 怎么分给 10 个人？60 行 C 代码演示 HAMi LD_PRELOAD 原理</div>
+  <div class="card-tags">
+    <span class="tag tag-code">C ×2</span>
+    <span class="tag tag-gpu-no">无 GPU</span>
+  </div>
+</div>
+
+<div class="card" data-module="m4">
+  <div class="card-num">Module 4 · 120min</div>
+  <div class="card-title">Kubernetes 入门与 GPU 工作负载调度</div>
+  <div class="card-hook">100 台 GPU 服务器怎么管？kubectl apply 背后 7 步全链路</div>
+  <div class="card-tags">
+    <span class="tag tag-code">YAML ×3</span>
+    <span class="tag tag-gpu-opt">GPU 推荐</span>
+  </div>
+</div>
+
+<div class="card" data-module="m5">
+  <div class="card-num">Module 5 · 120min</div>
+  <div class="card-title">大模型推理框架入门：以 vLLM 为例</div>
+  <div class="card-hook">为什么推理要分 Prefill 和 Decode 两阶段？nano-vllm 源码走读 Scheduler + PagedAttention</div>
+  <div class="card-tags">
+    <span class="tag tag-code">nano-vllm</span>
+    <span class="tag tag-gpu-req">需要 GPU</span>
+  </div>
+</div>
+
+<div class="card" data-module="m6">
+  <div class="card-num">Module 6 · 90min</div>
+  <div class="card-title">大模型推理加速实践：KV Cache 原理与优化</div>
+  <div class="card-hook">显存不够怎么办？量化 · Offloading · GQA/MLA · Prefix Caching</div>
+  <div class="card-tags">
+    <span class="tag tag-code">Python ×2</span>
+    <span class="tag tag-gpu-opt">GPU 推荐</span>
+  </div>
+</div>
+
+<div class="card" data-module="m7">
+  <div class="card-num">Module 7 · 90min</div>
+  <div class="card-title">从推理引擎到服务平台</div>
+  <div class="card-hook">1000 用户 · 10 模型 · SLA 99.9% — DeepSeek V3 EP=32 部署案例</div>
+  <div class="card-tags">
+    <span class="tag tag-code">Flask 网关</span>
+    <span class="tag tag-gpu-no">无 GPU</span>
+  </div>
+</div>
+
+<div class="card" data-module="m8">
+  <div class="card-num">Module 8 · 90min</div>
+  <div class="card-title">课程总结与 AI Infra 前沿展望</div>
+  <div class="card-hook">7 模块串联 + Agent Infra + 大作业三选一 (骨架代码 90+ TODOs)</div>
+  <div class="card-tags">
+    <span class="tag tag-code">骨架代码</span>
+    <span class="tag tag-gpu-no">无 GPU</span>
+  </div>
+</div>
+
+</div>
+
+</div>
+
+<script>
+const stack = document.getElementById('stack');
+const modules = document.getElementById('modules');
+
+function highlight(moduleId) {
+  // clear all
+  document.querySelectorAll('.stack-item.active, .card.active').forEach(el => el.classList.remove('active'));
+  // highlight stack item
+  const si = stack.querySelector(`[data-module="${moduleId}"]`);
+  if (si) si.classList.add('active');
+  // highlight card
+  const card = modules.querySelector(`[data-module="${moduleId}"]`);
+  if (card) {
+    card.classList.add('active');
+    card.scrollIntoView({ behavior:'smooth', block:'center' });
+  }
+}
+
+stack.addEventListener('click', e => {
+  const item = e.target.closest('.stack-item');
+  if (item) highlight(item.dataset.module);
+});
+
+modules.addEventListener('click', e => {
+  const card = e.target.closest('.card');
+  if (card) highlight(card.dataset.module);
+});
+</script>
+</body>
+</html>

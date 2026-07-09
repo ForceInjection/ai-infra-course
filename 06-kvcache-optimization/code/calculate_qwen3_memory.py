@@ -2,7 +2,8 @@
 """Estimate LLM inference memory usage for MHA/GQA models.
 
 Supports any dense model with MHA or GQA attention (Qwen2.5, Llama-3, etc.).
-Pure Python — zero dependencies, no GPU required.
+本脚本纯 Python 零依赖，在笔记本/台式机上即可运行 (不需要 GPU)。
+模块 6 的 vLLM + LMCache 实验部分仍需 GPU (≥ 8 GB)。
 
 Examples:
     # Qwen3-0.6B (default)
