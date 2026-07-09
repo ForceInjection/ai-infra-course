@@ -64,11 +64,11 @@
 - 加权随机路由 + 健康检查
 - 故障转移 (后端挂掉自动切换)
 
-详见 `hands-on-exercise.md`，代码 `code/ai_gateway.py`。
+详见 [`hands-on-exercise.md`](hands-on-exercise.md)，代码 [`code/ai_gateway.py`](code/ai_gateway.py)。
 
 ## 课后作业
 
-设计企业级推理服务平台 (10 万 QPS, 10 种模型, SLA 99.9%) + 增强网关 (API Key 管理、按模型路由、Prometheus Metrics)。详见 `homework.md`。
+设计企业级推理服务平台 (10 万 QPS, 10 种模型, SLA 99.9%) + 增强网关 (API Key 管理、按模型路由、Prometheus Metrics)。详见 [`homework.md`](homework.md)。
 
 ## 参考来源
 

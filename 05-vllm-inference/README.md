@@ -56,7 +56,7 @@
 
 ## 实验环境
 
-详见 `lab-environment.md`。
+详见 [`lab-environment.md`](lab-environment.md)。
 
 ## 动手实验
 
@@ -68,7 +68,7 @@
 
 ## 课后作业
 
-详见 `homework.md` (8 个任务覆盖 KV Cache 计算、vLLM 压测、nano-vllm 源码分析)。
+详见 [`homework.md`](homework.md) (8 个任务覆盖 KV Cache 计算、vLLM 压测、nano-vllm 源码分析)。
 
 ## 参考来源
 

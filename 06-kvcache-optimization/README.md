@@ -75,7 +75,7 @@ KV Cache = 2 × L × H_kv × D × T × B
 
 | 实验          | 主题                               | 工具                               |
 | ------------- | ---------------------------------- | ---------------------------------- |
-| 手算 KV Cache | 跟着公式计算 Qwen2.5-7B/72B 的显存 | 纸笔 / `calculate_qwen3_memory.py` |
+| 手算 KV Cache | 跟着公式计算 Qwen2.5-7B/72B 的显存 | 纸笔 / [`calculate_qwen3_memory.py`](code/calculate_qwen3_memory.py) |
 | 显存规划实战  | 为 Qwen2.5-72B + H100×4 规划显存   | `calculate_qwen3_memory.py`        |
 | LMCache 加速  | 多轮对话场景下观察缓存命中         | vLLM + LMCache                     |
 
