@@ -1,6 +1,6 @@
 # 模块 3：GPU 虚拟化与容器化实践
 
-> 90 分钟 &nbsp;|&nbsp; 42 页 PPT &nbsp;|&nbsp; 2 个 C 程序 &nbsp;|&nbsp; 1 个可视化 HTML
+> 90 分钟 &nbsp;|&nbsp; 42 页 PPT &nbsp;|&nbsp; 2 个 C 程序 &nbsp;|&nbsp; 2 个可视化 HTML
 
 ## 目录结构
 
@@ -13,7 +13,8 @@
 │   ├── 01_mymalloc.c      # LD_PRELOAD malloc hook 库 (PPT 第 12 + 33 页)
 │   └── 02_test_malloc.c   # 配额测试程序
 └── visuals/
-    └── ld-preload-flow.html  # LD_PRELOAD 拦截流程 6 步动画
+    ├── ld-preload-flow.html  # LD_PRELOAD 拦截流程 6 步动画
+    └── cuda-stack.html       # CUDA 软件栈 — 一次 cudaMalloc 穿越 5 层
 ```
 
 ## 教学流程

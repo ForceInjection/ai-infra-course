@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUDA 软件栈 — 一次 cudaMalloc 调用穿越 5 层</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:14px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#F8F6FB; }
+.header p { color:#8A7BB5; margin-top:2px; font-size:0.78em; }
+.main-wrap { max-width:1250px; width:100%; margin:0 auto; padding:0 10px 8px; display:flex; gap:14px; flex:1; min-height:0; align-items:flex-start; }
+.main-left { flex:1; min-width:0; display:flex; align-items:center; justify-content:center; }
+.main-right { width:400px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { height:560px; overflow-y:auto; background:#231440; border:1px solid #432879; border-radius:8px; padding:14px 16px; margin-bottom:8px; flex-shrink:0; }
+.detail-panel .note { color:#C8BEE0; font-size:0.8em; line-height:1.7; }
+.detail-panel .note strong { color:#F8F6FB; }
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.78em; background:#0E2841; padding:1px 5px; border-radius:3px; color:#E97132; }
+.actions { display:flex; gap:6px; flex-wrap:wrap; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; background:#432879; color:#C8BEE0; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.2); }
+.actions button:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-next { background:#156082 !important; color:#FFFFFF !important; }
+.btn-play { background:#196B24 !important; color:#FFFFFF !important; }
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>CUDA 软件栈 — 一次 cudaMalloc 调用穿越 5 层</h1>
+  <p>模块 3 — GPU 虚拟化与容器化实践 &nbsp;|&nbsp; PPT 第 10-12 页 &nbsp;|&nbsp; 点击「下一步」逐步演示</p>
+</div>
+<div class="main-wrap">
+  <div class="main-left">
+    <svg id="main-svg" viewBox="0 0 900 750"></svg>
+  </div>
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        <strong>CUDA 软件栈总览</strong><br><br>
+        从应用程序到 GPU 硬件，一次 CUDA 调用穿越 <strong>5 层</strong>。<br><br>
+        其中 <strong>CUDA Driver API</strong> 是 HAMi LD_PRELOAD 拦截的关键位置——<br>
+        所有上层调用最终都经过这里，拦截这一层就能控制所有 GPU 资源分配。<br><br>
+        点击「下一步」追踪一次 <code>cudaMalloc</code> 的完整路径 →
+      </div>
+    </div>
+    <div class="actions">
+      <button onclick="prevStep()" id="btn-prev">&#9664; 上一步</button>
+      <button class="btn-next" onclick="nextStep()" id="btn-next">下一步 &#9654;</button>
+      <button class="btn-play" onclick="playAll()">&#9654; 自动</button>
+      <button onclick="resetAll()">&#8634; 重置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var step = 0, maxSteps = 7, playing = false;
+
+function nextStep() { if (!playing && step < maxSteps) { step++; draw(); } }
+function prevStep() { if (!playing && step > 0) { step--; draw(); } }
+function resetAll() { step = 0; draw(); }
+async function playAll() {
+  if (playing) return; playing = true;
+  document.getElementById("btn-next").disabled = true;
+  resetAll();
+  for (var i = 0; i < maxSteps; i++) {
+    await new Promise(function(r){setTimeout(r,1200)});
+    step++; draw();
+  }
+  playing = false;
+  document.getElementById("btn-next").disabled = false;
+}
+
+function R(x,y,w,h,f,s,sw,rx) {
+  sw=sw||0.5; rx=rx||2;
+  return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+rx+'" fill="'+f+'" stroke="'+s+'" stroke-width="'+sw+'"/>';
+}
+function T(x,y,text,size,fill,anchor,weight) {
+  return '<text x="'+x+'" y="'+y+'" text-anchor="'+(anchor||'middle')+'" font-size="'+size+'" fill="'+fill+'" font-weight="'+(weight||'normal')+'" font-family="sans-serif">'+text+'</text>';
+}
+function arrow(x1,y1,x2,y2,color,sw) {
+  var h='', dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy);
+  if(len<1) return h;
+  sw=sw||2.5; color=color||'#432879';
+  h+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+color+'" stroke-width="'+sw+'"/>';
+  var ux=dx/len, uy=dy/len, sz=10, px=x2-ux*sz, py=y2-uy*sz;
+  h+='<polygon points="'+x2+','+y2+' '+(px-uy*sz*0.5)+','+(py+ux*sz*0.5)+' '+(px+uy*sz*0.5)+','+(py-ux*sz*0.5)+'" fill="'+color+'"/>';
+  return h;
+}
+
+// Layered stack dimensions: left label column + right flow column
+var LX=50, LW=150, RX=220, RW=650, RH=90, GAP=48, START_Y=60;
+var LAYER_COLORS = [
+  {bg:'#231440', fg:'#F8F6FB', stroke:'#432879', label:'应用程序'},
+  {bg:'#0E2841', fg:'#F8F6FB', stroke:'#156082', label:'CUDA Runtime API'},
+  {bg:'#2D1B55', fg:'#F8F6FB', stroke:'#614F96', label:'CUDA Driver API'},
+  {bg:'#231440', fg:'#F8F6FB', stroke:'#432879', label:'NVIDIA Driver'},
+  {bg:'#0A0A1A', fg:'#F8F6FB', stroke:'#1E293B', label:'GPU 硬件'}
+];
+var LAYER_SUBS = [
+  'vLLM / PyTorch / TensorFlow',
+  'libcudart.so — cudaMalloc, cudaLaunchKernel, ...',
+  'libcuda.so — cuMemAlloc, cuLaunchKernel, ...',
+  'nvidia.ko — 内核态驱动, ioctl 接口',
+  'H100/A100 — SM, HBM, MMU'
+];
+
+function draw() {
+  var svg = document.getElementById("main-svg");
+  var W=900, H=750, h='';
+  h+=R(0,0,W,H,'#1A0F2E','#432879',2,16);
+
+  var titles = [
+    "CUDA 软件栈 — 5 层架构",
+    "Step 1: 应用程序调用 cudaMalloc — 从 vLLM 发起请求",
+    "Step 2: CUDA Runtime API — libcudart 处理 cudaMalloc",
+    "Step 3: Runtime → Driver — cudaMalloc 内部调用 cuMemAlloc",
+    "Step 4: CUDA Driver API — ⚡ HAMi LD_PRELOAD 拦截点!",
+    "Step 5: HAMi 配额检查 — 允许/拒绝这次显存分配",
+    "Step 6: NVIDIA Driver — ioctl 与 GPU 硬件通信",
+    "总结: 为什么拦截 Driver API 就能控制所有 GPU 资源?"
+  ];
+  h+=T(W/2, 28, titles[Math.min(step,titles.length-1)], 17, '#F8F6FB', 'middle', 'bold');
+
+  // Draw the 5 layers
+  for (var i = 0; i < 5; i++) {
+    var ly = START_Y + i * (RH + GAP);
+    var lc = LAYER_COLORS[i];
+    var labelX = LX + 10, labelW = LW - 10;
+    var rx = 220, rw = 650;
+
+    // Left label
+    var isHighlighted = (step >= 1 && i === 0) || (step >= 2 && i === 1) || (step >= 3 && i === 2) || (step >= 6 && i === 3) || (step >= 6 && i === 4);
+    if (step >= 4 && i === 2) isHighlighted = true; // HAMi highlight for Driver layer
+
+    var active = (step >= 4 && i === 2); // Driver API layer glows when HAMi is active
+
+    h+=R(labelX, ly, labelW, RH, lc.bg, isHighlighted ? lc.stroke : '#432879', active ? 2.5 : 1.5, 8);
+    h+=T(labelX + labelW/2, ly + RH/2 - 6, lc.label, 14, lc.fg, 'middle', 'bold');
+    h+=T(labelX + labelW/2, ly + RH/2 + 14, lc.label, 11, '#8A7BB5', 'middle');
+
+    // Right content box
+    h+=R(rx, ly, rw, RH, lc.bg, isHighlighted ? lc.stroke : '#432879', active ? 2.5 : 1, 6);
+    h+=T(rx + 16, ly + RH/2 - 7, LAYER_SUBS[i], 13, lc.fg, 'start');
+    if (i < 4) {
+      h+=T(rx + 16, ly + RH/2 + 15, i === 2 ? '← HAMi libvgpu.so 在此拦截!' : '', 12, '#E97132', 'start', 'bold');
+    }
+  }
+
+  // ── STEP-SPECIFIC ANNOTATIONS ──
+
+  // Step 1: App calls cudaMalloc
+  if (step >= 1) {
+    var y1 = START_Y + RH/2;
+    h+=T(RX + RW - 300, y1 - 26, 'cudaMalloc(&ptr, 1GB) — 分配 1GB 显存', 12, '#60a5fa', 'start');
+    h+=T(RX + RW - 300, y1 - 8, 'vLLM 需要为 KV Cache 分配显存', 12, '#8A7BB5', 'start');
+  }
+
+  // Step 2: Runtime API processes
+  if (step >= 2) {
+    var y2 = START_Y + (RH + GAP) + RH/2;
+    h+=T(RX + RW - 280, y2 - 10, '参数校验, 句柄解析, 转发到 Driver API', 12, '#0F9ED5', 'start');
+  }
+
+  // Step 3: Runtime → Driver transition
+  if (step >= 3) {
+    var y_from = START_Y + (RH + GAP) + RH; // bottom of Runtime
+    var y_to = START_Y + 2 * (RH + GAP);     // top of Driver
+    var mid = y_from + (y_to - y_from) / 2;
+    // Down arrow from Runtime to Driver
+    h+=arrow(RX + 80, y_from + 6, RX + 80, y_to - 6, '#E97132', 3);
+    h+=T(RX + 160, mid - 8, 'cudaMalloc 内部', 12, '#E97132', 'start');
+    h+=T(RX + 160, mid + 10, '调用 cuMemAlloc', 12, '#E97132', 'start', 'bold');
+  }
+
+  // Step 4: HAMi intercept point
+  if (step >= 4) {
+    var dy = START_Y + 2 * (RH + GAP);
+    // Red bracket on left of Driver layer
+    h+=R(RX - 8, dy + 6, 4, RH - 12, '#E97132', '#E97132', 3, 0);
+    // Annotation on the right side of the layer box, separate from left-side labels
+    h+=T(RX + RW - 320, dy + RH/2 + 9, '⚡ LD_PRELOAD 拦截点 — 所有 CUDA 应用必经之路', 12, '#E97132', 'start', 'bold');
+  }
+
+  // Step 5: HAMi logic — positioned in gap between Driver API and NVIDIA Driver
+  if (step >= 5) {
+    var hamY = START_Y + 2 * (RH + GAP) + RH + 3;
+    h+=R(RX + 40, hamY, RW - 80, 42, '#422006', '#E97132', 2, 6);
+    h+=T(RX + RW/2, hamY + 18, 'hami_malloc: if (used + 1GB > quota) return CUDA_ERROR_OUT_OF_MEMORY', 13, '#E97132', 'middle', 'bold');
+    h+=T(RX + RW/2, hamY + 34, 'else → 调用真正的 cuMemAlloc → 放行给 NVIDIA Driver', 13, '#fbbf24', 'middle');
+
+    // Arrow from HAMi box down to NVIDIA Driver layer
+    h+=arrow(RX + RW/2, hamY + 42, RX + RW/2, START_Y + 3 * (RH + GAP), '#475569', 2);
+  }
+
+  // Step 6: Driver → GPU
+  var drvY = START_Y + 3 * (RH + GAP) + RH;
+  var gpuY = START_Y + 4 * (RH + GAP);
+  if (step >= 6) {
+    var mid6 = drvY + (gpuY - drvY) / 2;
+    h+=arrow(RX + RW - 120, drvY + 6, RX + RW - 120, gpuY - 6, '#196B24', 3);
+    h+=T(RX + RW - 50, mid6, 'ioctl(fd, NVIDIA_MMAP)', 12, '#4ade80', 'middle');
+    h+=T(RX + RW - 360, gpuY + RH/2, 'GPU MMU 映射显存页 → 返回 GPU 虚拟地址 → 写回 ptr', 12, '#C8BEE0', 'start');
+  }
+
+  // Step 7: Summary
+  if (step >= 7) {
+    h+=T(W/2, H - 16, '拦截 Driver API = 拦截所有上层框架 (PyTorch/vLLM/TensorFlow) — 因为大家最终都调 cuMemAlloc/cuLaunchKernel', 13, '#fbbf24', 'middle');
+  }
+
+  var descs = [
+    "<strong>CUDA 软件栈 — 5 层架构</strong><br><br>从应用程序到 GPU 硬件，一次 CUDA 调用穿越 5 层：<br><br><code>应用程序</code> → <code>CUDA Runtime API</code> → <code>CUDA Driver API</code> → <code>NVIDIA Driver</code> → <code>GPU 硬件</code><br><br>关键在于：<strong>所有上层框架</strong>（PyTorch、vLLM、TensorFlow）最终都通过 CUDA Driver API 与 GPU 通信。<br><br>HAMi 在 Driver API 层用 <code>LD_PRELOAD</code> 拦截，一举控制所有框架的 GPU 资源。<br><br>点击「下一步」追踪一次 <code>cudaMalloc</code> →",
+    "<strong>Step 1: vLLM 调用 cudaMalloc</strong><br><br>vLLM 的 PagedAttention 需要为 KV Cache Block 分配 GPU 显存。<br><br><code>cudaMalloc(&ptr, 1GB)</code><br><br>这是 CUDA Runtime API 的函数，vLLM 直接或间接（通过 PyTorch）调用它。",
+    "<strong>Step 2: libcudart 处理</strong><br><br><code>libcudart.so</code> 是 CUDA Runtime 库。<br><br>它对参数做校验（指针非空、size > 0），然后将调用转换为 Driver API 格式。<br><br>注意：Runtime API 是 Driver API 的<strong>便捷封装</strong>，每个 Runtime 函数内部都会调用对应的 Driver 函数。",
+    "<strong>Step 3: cudaMalloc → cuMemAlloc</strong><br><br><code>cudaMalloc</code> 内部调用 <code>cuMemAlloc</code>（Driver API）。<br><br>Runtime API 函数几乎都是 Driver API 的薄封装：<br><br><code>cudaMalloc</code> → <code>cuMemAlloc</code><br><code>cudaLaunchKernel</code> → <code>cuLaunchKernel</code><br><code>cudaMemcpy</code> → <code>cuMemcpyHtoD / cuMemcpyDtoH</code><br><br><strong>这就是为什么拦截 Driver API 能控制一切。</strong>",
+    "<strong>Step 4: ⚡ HAMi 拦截点!</strong><br><br>HAMi 的 <code>libvgpu.so</code> 通过 <code>LD_PRELOAD</code> 在 Driver API 层插入自己的 <code>cuMemAlloc</code>。<br><br>位置：<strong>CUDA Driver API 与应用之间</strong>。<br><br>这个位置极其关键：<br>• 上层所有框架（PyTorch/vLLM/TF）都经过这里<br>• 下层只有一个 NVIDIA Driver，无需修改<br>• 不需要重新编译任何程序<br>• 设置环境变量 <code>LD_PRELOAD=libvgpu.so</code> 即可生效",
+    "<strong>Step 5: HAMi 配额检查</strong><br><br><code>if (used + 1GB > quota) → return CUDA_ERROR_OUT_OF_MEMORY</code><br><br>这跟课堂的 <code>01_mymalloc.c</code> 完全一样：<br><br>• <code>malloc</code> → <code>cuMemAlloc</code><br>• <code>used 计数器</code> → 显存配额<br>• <code>return NULL</code> → <code>return CUDA_ERROR_OUT_OF_MEMORY</code><br><br>「你刚写的 30 行 malloc hook，就是 HAMi 的核心原理。」",
+    "<strong>Step 6: NVIDIA Driver 与 GPU 硬件</strong><br><br>真正的 <code>cuMemAlloc</code> 通过 <code>ioctl</code> 系统调用进入内核态的 NVIDIA Driver (<code>nvidia.ko</code>)。<br><br>Driver 通过 PCIe 与 GPU 通信，GPU MMU 映射显存页，返回 GPU 虚拟地址。<br><br>之后 CUDA kernel 就可以通过这个地址读写显存了。",
+    "<strong>总结: 为什么 Driver API 是「咽喉要道」？</strong><br><br>1. <strong>必经之路</strong>: 所有 CUDA 应用最终都调 Driver API<br>2. <strong>不改源码</strong>: LD_PRELOAD 环境变量即可，无需重新编译<br>3. <strong>完整控制</strong>: 拦截 cuMemAlloc（显存）+ cuLaunchKernel（算力）= GPU 资源共享<br>4. <strong>类比你写的代码</strong>: <code>01_mymalloc.c</code> 的 malloc hook = HAMi 的 cuMemAlloc hook，原理一字不差"
+  ];
+  document.getElementById("detail-panel").innerHTML = '<div class="note">'+descs[step]+'</div>';
+  svg.innerHTML = h;
+}
+
+draw();
+</script>
+</body>
+</html>
