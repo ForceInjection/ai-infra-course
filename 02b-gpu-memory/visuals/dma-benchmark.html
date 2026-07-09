@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMA 深度剖析 — Pinned vs Pageable 传输原理</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:14px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#F8F6FB; }
+.header p { color:#8A7BB5; margin-top:2px; font-size:0.78em; }
+.main-wrap { max-width:1250px; width:100%; margin:0 auto; padding:0 10px 8px; display:flex; gap:14px; flex:1; min-height:0; align-items:flex-start; }
+.main-left { flex:1; min-width:0; display:flex; align-items:center; justify-content:center; }
+.main-right { width:400px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { height:630px; overflow-y:auto; background:#231440; border:1px solid #432879; border-radius:8px; padding:14px 16px; margin-bottom:8px; flex-shrink:0; }
+.detail-panel .note { color:#C8BEE0; font-size:0.8em; line-height:1.7; }
+.detail-panel .note strong { color:#F8F6FB; }
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.78em; background:#0E2841; padding:1px 5px; border-radius:3px; color:#E97132; }
+.actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; background:#432879; color:#C8BEE0; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.2); }
+.actions button:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-next { background:#156082 !important; color:#FFFFFF !important; }
+.btn-play { background:#196B24 !important; color:#FFFFFF !important; }
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>DMA 深度剖析 — Pinned vs Pageable 传输原理</h1>
+  <p>模块 2b — GPU 内存管理 &nbsp;|&nbsp; PPT §2, §5 &nbsp;|&nbsp; 点击「下一步」逐步演示</p>
+</div>
+<div class="main-wrap">
+  <div class="main-left">
+    <svg id="main-svg" viewBox="0 0 1000 750"></svg>
+  </div>
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        <strong>DMA (Direct Memory Access) — 为什么 Pinned 比 Pageable 快 2.7×？</strong><br><br>
+        当 CPU 发起 <code>cudaMemcpy(dst, src, size, cudaMemcpyHostToDevice)</code> 时，数据如何从系统 RAM 到达 GPU 显存？<br><br>
+        答案取决于内存类型：<strong>Pinned Memory</strong>（页锁定）可以直接被 GPU DMA 引擎访问，<strong>Pageable Memory</strong>（可分页）需要操作系统介入做一次额外的 CPU 拷贝。<br><br>
+        点击「下一步」逐步查看两种路径的差异 →
+      </div>
+    </div>
+    <div class="actions">
+      <button onclick="prevStep()" id="btn-prev">&#9664; 上一步</button>
+      <button class="btn-next" onclick="nextStep()" id="btn-next">下一步 &#9654;</button>
+      <button class="btn-play" onclick="playAll()">&#9654; 自动</button>
+      <button onclick="resetAll()">&#8634; 重置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var step = 0, maxSteps = 8, playing = false;
+
+function nextStep() { if (!playing && step < maxSteps) { step++; draw(); } }
+function prevStep() { if (!playing && step > 0) { step--; draw(); } }
+function resetAll() { step = 0; draw(); }
+async function playAll() {
+  if (playing) return; playing = true;
+  document.getElementById("btn-next").disabled = true;
+  resetAll();
+  for (var i = 0; i < maxSteps; i++) {
+    await new Promise(function(r){setTimeout(r,1200)});
+    step++; draw();
+  }
+  playing = false;
+  document.getElementById("btn-next").disabled = false;
+}
+
+function R(x,y,w,h,f,s,sw,rx) {
+  sw=sw||0.5; rx=rx||2;
+  return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+rx+'" fill="'+f+'" stroke="'+s+'" stroke-width="'+sw+'"/>';
+}
+function T(x,y,text,size,fill,anchor,weight) {
+  return '<text x="'+x+'" y="'+y+'" text-anchor="'+(anchor||'middle')+'" font-size="'+size+'" fill="'+fill+'" font-weight="'+(weight||'normal')+'" font-family="sans-serif">'+text+'</text>';
+}
+function arrow(x1,y1,x2,y2,color,sw,dash) {
+  var h='', dx=x2-x1, dy=y2-y1, len=Math.sqrt(dx*dx+dy*dy);
+  if(len<1) return '';
+  sw=sw||2.5; color=color||'#432879';
+  h+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+color+'" stroke-width="'+sw+'"'+(dash?' stroke-dasharray="'+dash+'"':'')+'/>';
+  var ux=dx/len, uy=dy/len, sz=10, px=x2-ux*sz, py=y2-uy*sz;
+  h+='<polygon points="'+x2+','+y2+' '+(px-uy*sz*0.5)+','+(py+ux*sz*0.5)+' '+(px+uy*sz*0.5)+','+(py-ux*sz*0.5)+'" fill="'+color+'"/>';
+  return h;
+}
+
+function draw() {
+  var svg = document.getElementById("main-svg");
+  var W=1000, H=750, h='';
+  h+=R(0,0,W,H,'#1A0F2E','#432879',2,16);
+
+  var titles = [
+    "DMA 深度剖析 — Pinned vs Pageable",
+    "Step 1: 物理拓扑 — CPU、RAM、GPU、PCIe",
+    "Step 2: cudaMemcpyHostToDevice 发起传输请求",
+    "Step 3: Pinned Memory — 页表直接查找物理地址",
+    "Step 4: Pinned Memory — GPU DMA 引擎直接读 RAM",
+    "Step 5: Pageable Memory — OS 介入！页可能被换出",
+    "Step 6: Pageable Memory — CPU 先拷贝到 Bounce Buffer",
+    "Step 7: Pageable Memory — DMA 引擎从 Bounce Buffer 读取",
+    "总结: 2.7× 带宽差距的来源"
+  ];
+  h+=T(W/2, 30, titles[Math.min(step,titles.length-1)], 17, '#F8F6FB', 'middle', 'bold');
+
+  // Layout constants
+  var cpuX=40, cpuY=90, cpuW=180, cpuH=110;
+  var ramX=40, ramY=280, ramW=200, ramH=210;
+  var gpuX=730, gpuY=90, gpuW=210, gpuH=110;
+  var vramX=730, vramY=280, vramW=210, vramH=120;
+  var midX=280, midW=410;  // middle span (PCIe area)
+
+  // ── STATIC LAYOUT ──
+
+  // CPU
+  h+=R(cpuX,cpuY,cpuW,cpuH,'#231440','#A02B93',1.5,8);
+  h+=T(cpuX+cpuW/2,cpuY+35,'CPU','16','#F8F6FB','middle','bold');
+  h+=T(cpuX+cpuW/2,cpuY+60,'cudaMemcpy(..., H2D)','11','#E97132','middle');
+  h+=T(cpuX+cpuW/2,cpuY+80,'发起 DMA 传输','11','#8A7BB5','middle');
+
+  // RAM
+  h+=R(ramX,ramY,ramW,ramH,'#231440','#432879',2,8);
+  h+=T(ramX+ramW/2,ramY+28,'系统 RAM (DDR5)','14','#F8F6FB','middle','bold');
+  h+=T(ramX+ramW/2,ramY+52,'malloc() / cudaMallocHost()','11','#8A7BB5','middle');
+
+  // GPU
+  h+=R(gpuX,gpuY,gpuW,gpuH,'#0E2841','#156082',1.5,8);
+  h+=T(gpuX+gpuW/2,gpuY+35,'GPU (H100)','16','#F8F6FB','middle','bold');
+  h+=T(gpuX+gpuW/2,gpuY+58,'DMA Copy Engine','12','#F8F6FB','middle');
+  h+=T(gpuX+gpuW/2,gpuY+78,'读取 Descriptor Ring','11','#8A7BB5','middle');
+  // DMA Engine icon
+  h+=R(gpuX+gpuW/2-35,gpuY+90,70,22,'#156082','#0F9ED5',1.5,4);
+  h+=T(gpuX+gpuW/2,gpuY+106,'DMA Engine','10','#0F9ED5','middle','bold');
+
+  // VRAM
+  h+=R(vramX,vramY,vramW,vramH,'#0E2841','#156082',1.5,8);
+  h+=T(vramX+vramW/2,vramY+30,'GPU 显存 (HBM3)','14','#F8F6FB','middle','bold');
+  h+=T(vramX+vramW/2,vramY+52,'80 GB, 3.35 TB/s','11','#8A7BB5','middle');
+  h+=T(vramX+vramW/2,vramY+72,'cudaMalloc() 分配','11','#8A7BB5','middle');
+
+  // PCIe — subtle physical bus (all data goes through here, not the distinguishing factor)
+  h+=R(midX,190,midW,2,'','#432879',0.5,1);
+  h+=T(midX+midW/2,186,'PCIe Gen5 x16 (所有数据传输必经之路)','9','#614F96','middle');
+  // Connectors
+  h+=R(cpuX+cpuW,186,8,10,'','#432879',0.5,3);
+  h+=R(gpuX-8,186,8,10,'','#432879',0.5,3);
+
+  // ── STEP-SPECIFIC CONTENT ──
+
+  // Step 2: cudaMemcpy call
+  if (step >= 2) {
+    h+=T(cpuX+cpuW/2,cpuY-15,'cudaMemcpy(gpu_ptr, host_ptr, 1GB, H2D)','12','#fbbf24','middle','bold');
+  }
+
+  // Step 3: Page table lookup — common first step for both paths, persists through step 7
+  if (step >= 3 && step <= 7) {
+    var arrowX = cpuX + cpuW/2;
+    var midY = cpuY + cpuH + (ramY - cpuY - cpuH)/2 + 3;
+    h+=arrow(arrowX,cpuY+cpuH,arrowX,ramY,'#fbbf24',2);
+    h+=T(arrowX+75,midY,'get_user_pages() 锁定页','10','#fbbf24','middle');
+    h+=T(arrowX-70,midY,'物理地址: 0x7f8a_0000','10','#fbbf24','middle');
+  }
+
+  // Pinned RAM indicator — only during pinned narrative (step 3-4)
+  if (step >= 3 && step <= 4) {
+    h+=R(ramX+15,ramY+72,ramW-30,24,'#052e16','#4ade80',2,4);
+    h+=T(ramX+ramW/2,ramY+89,'Pinned: 物理地址锁定','11','#4ade80','middle');
+  }
+
+  var pinY = ramY + 90;   // Pinned path exit height (from user buffer)
+  var bbY  = ramY + 152;  // Pageable path exit height (from bounce buffer)
+
+  // Step 4: Pinned — DMA from user buffer directly (hidden after step 5)
+  if (step === 4) {
+    h+=R(ramX+ramW-3,pinY-4,8,8,'#4ade80','#4ade80',0,2);
+    h+=arrow(ramX+ramW,pinY,midX+40,pinY,'#4ade80',3);
+    h+=arrow(midX+40,pinY,gpuX-8,gpuY+60,'#4ade80',3);
+    h+=T(midX+midW/2,pinY-26,'DMA 引擎直接读用户 Buffer','12','#4ade80','middle','bold');
+    h+=T(midX+midW/2,pinY-12,'~55 GB/s','11','#4ade80','middle');
+    h+=R(vramX+15,vramY+88,vramW-30,24,'#052e16','#4ade80',2,4);
+    h+=T(vramX+vramW/2,vramY+105,'✓ 数据到达 VRAM','11','#4ade80','middle');
+  }
+
+  // Step 5: Pageable — DMA blocked for pageable memory (clear pinned elements)
+  if (step >= 5) {
+    h+=R(ramX+15,ramY+72,ramW-30,24,'#422006','#E97132',2,4);
+    h+=T(ramX+ramW/2,ramY+89,'Pageable: 物理页可能被换出','11','#E97132','middle');
+  }
+
+  // Step 6: Pageable — CPU copies to bounce buffer
+  if (step >= 6) {
+    // Bounce Buffer in RAM
+    h+=R(ramX+12,ramY+122,ramW-24,40,'#422006','#E97132',2,5);
+    h+=T(ramX+ramW/2,ramY+138,'Bounce Buffer (Pinned 暂存区)','12','#E97132','middle','bold');
+    h+=T(ramX+ramW/2,ramY+156,'内核分配, DMA 可安全访问','9','#8A7BB5','middle');
+    // Down arrow INSIDE RAM: pageable area → bounce buffer (CPU copy)
+    h+=arrow(ramX+ramW-40,ramY+100,ramX+ramW-40,ramY+118,'#E97132',1.5);
+    h+=T(ramX+ramW+6,ramY+112,'CPU memcpy()','9','#E97132','start');
+  }
+
+  // Step 7: Pageable — DMA from bounce buffer. Keep pinned path dimmed for contrast.
+  if (step >= 7) {
+    // Exit marker on RAM at bounce buffer level
+    h+=R(ramX+ramW-3,bbY-4,8,8,'#E97132','#E97132',0,2);
+    // Red arrow: bounce buffer → GPU
+    h+=arrow(ramX+ramW,bbY,midX+80,bbY,'#E97132',2.5);
+    h+=arrow(midX+80,bbY,gpuX-8,gpuY+80,'#E97132',2.5);
+    h+=T(midX+midW/2+15,bbY-26,'DMA: Bounce Buffer → GPU VRAM','11','#E97132','middle','bold');
+    h+=T(midX+midW/2+15,bbY-12,'~21 GB/s (瓶颈在 CPU 拷贝)','11','#E97132','middle');
+    // VRAM indicator (red)
+    h+=R(vramX+15,vramY+88,vramW-30,24,'#422006','#E97132',2,4);
+    h+=T(vramX+vramW/2,vramY+105,'⚠ 经 CPU 拷贝后到达 VRAM','11','#E97132','middle');
+  }
+
+  // Step 8: Summary — two paths side by side
+  if (step >= 8) {
+    var cx=120, cy=540, cw=760, ch=125;
+    h+=R(cx,cy,cw,ch,'#231440','#432879',1.5,8);
+
+    // Left: Pinned path
+    h+=T(cx+190,cy+24,'Pinned 路径 (cudaMallocHost)','14','#4ade80','middle','bold');
+    h+=T(cx+190,cy+50,'用户 Buffer (物理地址锁定)','11','#C8BEE0','middle');
+    h+=T(cx+190,cy+70,'→ DMA 引擎直接读取','11','#C8BEE0','middle');
+    h+=T(cx+190,cy+90,'→ PCIe → GPU VRAM','11','#C8BEE0','middle');
+    h+=T(cx+190,cy+118,'~55 GB/s','12','#4ade80','middle','bold');
+
+    // Divider
+    h+=R(cx+380,cy+15,2,93,'','#432879',1,0);
+
+    // Right: Pageable path
+    h+=T(cx+570,cy+24,'Pageable 路径 (malloc)','14','#E97132','middle','bold');
+    h+=T(cx+570,cy+50,'用户 Buffer → CPU memcpy() → 内核 Bounce Buffer (Pinned)','11','#C8BEE0','middle');
+    h+=T(cx+570,cy+70,'→ DMA 引擎读取 Bounce Buffer','11','#C8BEE0','middle');
+    h+=T(cx+570,cy+90,'→ PCIe → GPU VRAM','11','#C8BEE0','middle');
+    h+=T(cx+570,cy+118,'~21 GB/s','12','#E97132','middle','bold');
+
+    // Bottom note
+    h+=T(W/2,cy+ch+42,'差距 ~2.7× — 根因在 CPU memcpy 瓶颈 (~21 GB/s), 与 PCIe 代际无关','12','#fbbf24','middle');
+  }
+
+  // ── DETAIL PANEL ──
+  var descs = [
+    "<strong>DMA 深度剖析</strong><br><br>DMA (Direct Memory Access) 允许 GPU 绕过 CPU 直接读写系统 RAM。<br><br>但前提是：<strong>目标内存必须页锁定 (Pinned)</strong>，物理地址不能变化。<br><br><code>cudaMallocHost()</code> 分配的就是 pinned memory。<br><br>普通的 <code>malloc()</code> 分配的是 pageable memory — OS 随时可能把页换出，物理地址不固定。<br><br>这导致 pageable memory 的 DMA 传输多了一次 <strong>CPU memcpy 到 bounce buffer</strong> 的额外开销。<br><br>点击「下一步」逐步查看 →",
+    "<strong>Step 1: 物理拓扑</strong><br><br>左侧：CPU + 系统 RAM (DDR5)<br>右侧：GPU + 显存 (HBM3)<br>中间：PCIe Gen5 x16 (128 GB/s 双向)<br><br>CPU 和 GPU 通过 PCIe 总线连接。DMA 传输由 GPU 的 <strong>Copy Engine</strong> 发起 — 它读取 Descriptor Ring 中的传输描述符，向 PCIe 发出读/写请求。<br><br>Driver 在发起 DMA 前，向 Descriptor Ring 写入: 源地址、目标地址、传输大小。",
+    "<strong>Step 2: cudaMemcpy 发起</strong><br><br><code>cudaMemcpy(gpu_ptr, host_ptr, 1GB, cudaMemcpyHostToDevice)</code><br><br>CUDA Runtime 将此调用转为 <code>cuMemcpyHtoD</code> (Driver API)，Driver 再通过 ioctl 通知内核态的 NVIDIA Driver。<br><br>内核态 Driver 检查 <code>host_ptr</code> 指向的内存类型：Pinned 还是 Pageable？<br><br>这个判断决定了后续的 DMA 路径。",
+    "<strong>Step 3: Pinned Memory — 页表查找</strong><br><br>Pinned memory 通过 <code>cudaMallocHost()</code> 或 <code>cudaHostRegister()</code> 分配/注册。<br><br>内核调用 <code>get_user_pages()</code> 锁定物理页，确保在 DMA 传输期间物理地址不变。<br><br>关键：<strong>pinned 页不会被 OS 换出</strong>（不能 swap），DMA 引擎可以直接用物理地址读写。<br><br>代价：锁定太多内存会影响系统整体性能 — OS 可用于换页的内存减少。",
+    "<strong>Step 4: Pinned — GPU DMA 引擎直接读</strong><br><br>DMA 路径：<br><br>1. GPU Copy Engine 从 Descriptor Ring 读取传输描述符<br>2. Copy Engine 向 PCIe Root Complex 发起 Memory Read Request (TLP)<br>3. Root Complex 通过内存控制器读取系统 RAM<br>4. 数据通过 PCIe 返回到 GPU，写入 VRAM<br><br><strong>零 CPU 参与</strong> — CPU 可以同时做其他计算。<br><br>带宽：~55 GB/s (H100实测)，瓶颈在 PCIe Gen5 x16 的单向带宽 (64 GB/s)。",
+    "<strong>Step 5: Pageable — OS 必须介入</strong><br><br>问题：<code>malloc()</code> 分配的 pageable 内存，OS 随时可能：<br><br>• 将页面换出到 swap<br>• 移动物理页（内存压缩、NUMA 迁移）<br>• 尚未实际分配物理页（延迟分配）<br><br>GPU DMA 引擎<strong>无法处理缺页中断</strong> — 如果 DMA 传输中途页被换出，数据会写到错误的位置。<br><br>因此：Driver 必须<strong>先把 pageable 数据拷贝到一个 pinned bounce buffer</strong>，再让 DMA 引擎从 bounce buffer 读取。",
+    "<strong>Step 6: CPU 拷贝到 Bounce Buffer</strong><br><br>这是 pageable 路径<strong>额外的开销</strong>：<br><br>1. CPU 逐页遍历用户态虚拟地址 → 物理地址映射<br>2. 如果缺页，触发缺页中断，OS 分配并填充物理页<br>3. CPU 执行 <code>memcpy()</code>：用户 buffer → 内核 bounce buffer<br>4. Bounce buffer 是 pinned 的 — DMA 引擎可以安全访问<br><br><strong>关键瓶颈</strong>：CPU memcpy 带宽受限于内存控制器 (~20-25 GB/s)，<strong>与 PCIe 代际无关</strong>。<br><br>这就是为什么升级到 PCIe Gen6 后 pinned 能受益而 pageable 几乎不变。",
+    "<strong>Step 7: DMA 从 Bounce Buffer 读取</strong><br><br>经过 CPU 拷贝后，bounce buffer 中的数据是 pinned 的 → 走 Step 4 的 pinned DMA 路径。<br><br>但由于 bounce buffer 通常较小（几 MB），对于大传输（1GB+），需要<strong>多次循环</strong>：<br><br>CPU memcpy 一块 → DMA 传输一块 → CPU memcpy 下一块 → ...<br><br>这个过程串行执行，进一步降低有效带宽。<br><br>实测：pageable ~21 GB/s vs pinned ~55 GB/s (H100)，差距 ~2.7×。",
+    "<strong>总结: 2.7× 带宽差距的根本原因</strong><br><br><strong>Pinned (55 GB/s)</strong>:<br>GPU DMA 引擎 → PCIe → RAM (物理页)<br>瓶颈: PCIe 单向带宽<br><br><strong>Pageable (21 GB/s)</strong>:<br>CPU memcpy → Bounce Buffer → DMA → PCIe → GPU<br>瓶颈: CPU 内存带宽 + 页表遍历开销<br><br><strong>为什么差距不会随 PCIe 升级而缩小？</strong><br>CPU memcpy 瓶颈 (~20-25 GB/s) 与 PCIe 代际无关。<br>PCIe Gen6 升级后 pinned 可以到 ~110 GB/s，但 pageable 仍然 ~21 GB/s → 差距会变成 5×。<br><br><strong>工程启示</strong>: 高性能 CUDA 程序务必使用 <code>cudaMallocHost</code> 或 <code>cudaHostRegister</code>。"
+  ];
+  document.getElementById("detail-panel").innerHTML = '<div class="note">'+descs[step]+'</div>';
+  svg.innerHTML = h;
+}
+
+draw();
+</script>
+</body>
+</html>

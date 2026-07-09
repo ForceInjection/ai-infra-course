@@ -1,6 +1,6 @@
 # 模块2 高级：GPU 内存管理
 
-> 15–20 分钟 &nbsp;|&nbsp; 12 页 PPT &nbsp;|&nbsp; 1 个可视化 HTML &nbsp;|&nbsp; 1 个带宽测试脚本
+> 15–20 分钟 &nbsp;|&nbsp; 12 页 PPT &nbsp;|&nbsp; 2 个可视化 HTML &nbsp;|&nbsp; 2 个带宽测试脚本
 
 GPU 内存管理附录，从 CPU/GPU 对称性出发，介绍内存层级、DMA 传输、Pinned vs Pageable、碎片化和跨进程共享。
 
@@ -19,7 +19,8 @@ GPU 内存管理附录，从 CPU/GPU 对称性出发，介绍内存层级、DMA 
 │   ├── 01_dma_bandwidth.py              #   CPU↔GPU 带宽测试 (Python ctypes)
 │   └── 02_dma_bandwidth.cu              #   CPU↔GPU 带宽测试 (CUDA C)
 └── visuals/
-    └── gpu-memory-visual.html         # 6 层交互概念图
+    ├── gpu-memory-visual.html         # 6 层交互概念图
+    └── dma-benchmark.html            # DMA 深度剖析 — Pinned vs Pageable
 ```
 
 ## 可视化 HTML
@@ -27,6 +28,7 @@ GPU 内存管理附录，从 CPU/GPU 对称性出发，介绍内存层级、DMA 
 | 可视化                                                        | 用途                                                 | 教学场景                                |
 | ------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------- |
 | [GPU 内存管理 — 可交互概念图](visuals/gpu-memory-visual.html) | 6 层交互概念图 (物理拓扑→内存层级→DMA→MMU→碎片→共享) | 讲解 GPU 内存管理时打开，逐层探索各概念 |
+| [DMA 深度剖析 — Pinned vs Pageable 传输原理](visuals/dma-benchmark.html) | DMA 8 步动画: Pinned 直接 DMA vs Pageable Bounce Buffer | 讲解 DMA 带宽时打开，对比两种路径的完整时序 |
 
 ## 概念图层
 
