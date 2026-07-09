@@ -18,12 +18,12 @@
 
 ## 可视化 HTML
 
-| 文件                                                               | 用途                                  | 教学场景                                          |
-| ------------------------------------------------------------------ | ------------------------------------- | ------------------------------------------------- |
-| [`gpu-architecture.html`](visuals/gpu-architecture.html)           | GPU 芯片级 - SM 内部两级缩放          | 讲解硬件架构时打开，点击 SM 放大内部结构          |
-| [`cuda-thread-hierarchy.html`](visuals/cuda-thread-hierarchy.html) | Grid - Block - Warp - Thread 四级层级 | 讲解线程层次时打开，切换层级查看                  |
-| [`shared-memory-tiling.html`](visuals/shared-memory-tiling.html)   | 矩阵乘法 tiling 数据流，6 步演示      | 讲解 Shared Memory 优化时打开，逐步演示加载和计算 |
-| [`thread-index-mapping.html`](visuals/thread-index-mapping.html)   | 线程索引到数据的 1D/2D/3D 映射        | 讲解索引计算时打开，切换维度查看映射关系          |
+| 文件                                                                               | 用途                                  | 教学场景                                          |
+| ---------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------- |
+| [GPU 逻辑架构全景 — A100/H100](visuals/gpu-architecture.html)                      | GPU 芯片级 - SM 内部两级缩放          | 讲解硬件架构时打开，点击 SM 放大内部结构          |
+| [CUDA 线程层次 — Grid → Block → Warp → Thread](visuals/cuda-thread-hierarchy.html) | Grid - Block - Warp - Thread 四级层级 | 讲解线程层次时打开，切换层级查看                  |
+| [Shared Memory Tiling — 矩阵乘法数据流](visuals/shared-memory-tiling.html)         | 矩阵乘法 tiling 数据流，6 步演示      | 讲解 Shared Memory 优化时打开，逐步演示加载和计算 |
+| [CUDA 线程索引到数据的映射](visuals/thread-index-mapping.html)                     | 线程索引到数据的 1D/2D/3D 映射        | 讲解索引计算时打开，切换维度查看映射关系          |
 
 ## 教学流程
 

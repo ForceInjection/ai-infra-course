@@ -6,7 +6,7 @@
 
 内容地址：
 
-- Github: https://github.com/ForceInjection/AI-fundamentals
+- Github: <https://github.com/ForceInjection/AI-fundamentals>
 
 ## 2. 课程大纲
 

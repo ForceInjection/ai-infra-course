@@ -72,8 +72,8 @@
 
 ## 参考来源
 
-- nano-vllm: https://github.com/ForceInjection/nano-vllm
-- nano-vllm 在线课程: https://forceinjection.github.io/nano-vllm/
-- vLLM: https://github.com/vllm-project/vllm
+- nano-vllm: <https://github.com/ForceInjection/nano-vllm>
+- nano-vllm 在线课程: <https://forceinjection.github.io/nano-vllm/>
+- vLLM: <https://github.com/vllm-project/vllm>
 - vLLM Paper (SOSP 2023)
 - [AI-fundamentals](https://github.com/ForceInjection/AI-fundamentals/blob/main/09_inference_system/vllm/)
