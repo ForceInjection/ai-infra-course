@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux I/O 栈 — 存储栈与网络栈</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:14px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#F8F6FB; }
+.header p { color:#8A7BB5; margin-top:2px; font-size:0.78em; }
+.main-wrap { max-width:1150px; width:100%; margin:0 auto; padding:0 10px 8px; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Linux I/O 栈 — 一次 write() 和一次 send() 穿越的 6 层</h1>
+  <p>模块 1 — Linux 基础与容器技术入门 &nbsp;|&nbsp; PPT 第 3-8 页 &nbsp;|&nbsp; 静态示意图</p>
+</div>
+<div class="main-wrap">
+<svg viewBox="0 0 1100 720">
+
+  <!-- background -->
+  <rect x="0" y="0" width="1100" height="720" rx="16" fill="#1A0F2E" stroke="#432879" stroke-width="2"/>
+
+  <!-- ====== LEFT: 存储栈 ====== -->
+  <rect x="42" y="46" width="210" height="670" rx="10" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <text x="147" y="34" text-anchor="middle" font-size="17" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">存储栈 — 一次 write() 调用</text>
+
+  <rect x="58" y="58" width="178" height="72" rx="8" fill="#231440" stroke="#432879" stroke-width="1.5"/>
+  <text x="147" y="88" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">应用程序</text>
+  <text x="147" y="110" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">Python: f.write(buf)</text>
+
+  <text x="147" y="150" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="157" y="144" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">write(fd, buf, len)</text>
+
+  <rect x="58" y="158" width="178" height="72" rx="8" fill="#0E2841" stroke="#156082" stroke-width="1.5"/>
+  <text x="147" y="188" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">glibc (libc.so)</text>
+  <text x="147" y="210" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">syscall(SYS_write, ...)</text>
+
+  <text x="147" y="250" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="157" y="244" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">syscall 陷入内核</text>
+
+  <rect x="58" y="258" width="178" height="72" rx="8" fill="#2D1B55" stroke="#614F96" stroke-width="1.5"/>
+  <text x="147" y="288" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">VFS (虚拟文件系统)</text>
+  <text x="147" y="310" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">vfs_write() → 统一接口</text>
+
+  <text x="147" y="350" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="157" y="344" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">file→f_op→write()</text>
+
+  <rect x="58" y="358" width="178" height="72" rx="8" fill="#231440" stroke="#432879" stroke-width="1.5"/>
+  <text x="147" y="388" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">文件系统 (ext4/xfs)</text>
+  <text x="147" y="410" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">分配 inode + 数据块</text>
+
+  <text x="147" y="450" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="157" y="444" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">submit_bio()</text>
+
+  <rect x="58" y="458" width="178" height="72" rx="8" fill="#0E2841" stroke="#156082" stroke-width="1.5"/>
+  <text x="147" y="488" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Block Layer</text>
+  <text x="147" y="510" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">IO 调度 / 合并 / 重排</text>
+
+  <text x="147" y="550" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="157" y="544" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">blk_mq_submit_bio()</text>
+
+  <rect x="58" y="558" width="178" height="72" rx="8" fill="#2D1B55" stroke="#614F96" stroke-width="1.5"/>
+  <text x="147" y="588" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">NVMe 驱动</text>
+  <text x="147" y="610" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">Doorbell → 硬件队列</text>
+
+  <text x="147" y="648" text-anchor="middle" font-size="12" fill="#196B24" font-family="sans-serif">▼</text>
+
+  <rect x="58" y="658" width="178" height="44" rx="8" fill="#0A0A1A" stroke="#1E293B" stroke-width="1.5"/>
+  <text x="147" y="685" text-anchor="middle" font-size="13" fill="#C8BEE0" font-weight="bold" font-family="sans-serif">NVMe SSD 硬件</text>
+
+  <!-- ====== CENTER: Namespace 说明面板 ====== -->
+  <rect x="280" y="46" width="540" height="670" rx="10" fill="#1A1230" stroke="#E97132" stroke-width="1.5"/>
+
+  <!-- 标题栏 -->
+  <rect x="280" y="46" width="540" height="36" rx="10" fill="#E97132"/>
+  <rect x="280" y="56" width="540" height="26" fill="#E97132"/>
+  <text x="550" y="69" text-anchor="middle" font-size="15" fill="#FFFFFF" font-weight="bold" font-family="sans-serif">容器 Namespace 与 Cgroup 如何隔离/限制这两条 I/O 路径？</text>
+
+  <!-- mount namespace -->
+  <rect x="300" y="100" width="500" height="80" rx="6" fill="#231440" stroke="#A02B93" stroke-width="1.5"/>
+  <text x="316" y="124" text-anchor="start" font-size="13" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">mount namespace → 隔离 VFS 层</text>
+  <text x="316" y="146" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">每个容器有独立的文件系统树。Docker 通过 OverlayFS 将多个只读</text>
+  <text x="316" y="164" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">镜像层 (lower) 与一个可写层 (upper) 合并为容器的根文件系统。</text>
+
+  <!-- net namespace -->
+  <rect x="300" y="196" width="500" height="80" rx="6" fill="#231440" stroke="#A02B93" stroke-width="1.5"/>
+  <text x="316" y="220" text-anchor="start" font-size="13" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">net namespace → 隔离网络栈</text>
+  <text x="316" y="242" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">每个容器有独立的网卡 (veth pair)、IP 地址、路由表、iptables</text>
+  <text x="316" y="260" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">规则。容器间通信通过虚拟网桥 (docker0) 转发。</text>
+
+  <!-- cgroup blkio -->
+  <rect x="300" y="292" width="500" height="80" rx="6" fill="#231440" stroke="#196B24" stroke-width="1.5"/>
+  <text x="316" y="316" text-anchor="start" font-size="13" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">cgroup blkio → 限制 Block Layer</text>
+  <text x="316" y="338" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">控制每个容器的块设备 I/O：读写 IOPS 上限、吞吐量 (BPS) 上限。</text>
+  <text x="316" y="356" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">防止一个容器占满磁盘带宽影响其他容器。</text>
+
+  <!-- pid namespace -->
+  <rect x="300" y="388" width="500" height="64" rx="6" fill="#231440" stroke="#A02B93" stroke-width="1.5"/>
+  <text x="316" y="412" text-anchor="start" font-size="13" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">pid namespace → 隔离进程视图</text>
+  <text x="316" y="434" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">容器内 PID 1 = init 进程。Host 上可以看到容器的真实 PID，容器内看不到 Host 进程。</text>
+
+  <!-- cgroup memory/cpu -->
+  <rect x="300" y="468" width="500" height="64" rx="6" fill="#231440" stroke="#196B24" stroke-width="1.5"/>
+  <text x="316" y="492" text-anchor="start" font-size="13" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">cgroup memory / cpu → 资源限制</text>
+  <text x="316" y="514" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">内存上限 + OOM Killer、CPU shares 权重、cpuset 绑核。与 I/O 路径协同发挥作用。</text>
+
+  <!-- 底部总结 -->
+  <line x1="310" y1="552" x2="790" y2="552" stroke="#432879" stroke-width="1"/>
+  <text x="550" y="576" text-anchor="middle" font-size="12" fill="#E97132" font-weight="bold" font-family="sans-serif">总结</text>
+  <text x="316" y="598" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">• 存储 I/O 路径：mount ns (VFS 隔离) + cgroup blkio (Block Layer 限速)</text>
+  <text x="316" y="618" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">• 网络 I/O 路径：net ns (协议栈隔离) + cgroup net_prio (流量优先级)</text>
+  <text x="316" y="638" text-anchor="start" font-size="11" fill="#C8BEE0" font-family="sans-serif">• 容器 = Namespace (隔离可见性) + Cgroup (限制资源量) + OverlayFS (分层镜像)</text>
+
+  <!-- ====== RIGHT: 网络栈 ====== -->
+  <rect x="848" y="46" width="210" height="670" rx="10" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <text x="953" y="34" text-anchor="middle" font-size="17" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">网络栈 — 一次 send() 调用</text>
+
+  <rect x="864" y="58" width="178" height="72" rx="8" fill="#231440" stroke="#432879" stroke-width="1.5"/>
+  <text x="953" y="88" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">应用程序</text>
+  <text x="953" y="110" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">Python: sock.send(data)</text>
+
+  <text x="953" y="150" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="963" y="144" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">send(fd, buf, len, 0)</text>
+
+  <rect x="864" y="158" width="178" height="72" rx="8" fill="#0E2841" stroke="#156082" stroke-width="1.5"/>
+  <text x="953" y="188" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">glibc (libc.so)</text>
+  <text x="953" y="210" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">syscall(SYS_sendto, ...)</text>
+
+  <text x="953" y="250" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="963" y="244" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">syscall 陷入内核</text>
+
+  <rect x="864" y="258" width="178" height="72" rx="8" fill="#2D1B55" stroke="#614F96" stroke-width="1.5"/>
+  <text x="953" y="288" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Socket Layer</text>
+  <text x="953" y="310" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">sock_sendmsg() → BSD API</text>
+
+  <text x="953" y="350" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="963" y="344" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">tcp_sendmsg()</text>
+
+  <rect x="864" y="358" width="178" height="72" rx="8" fill="#231440" stroke="#432879" stroke-width="1.5"/>
+  <text x="953" y="388" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">TCP/IP 协议栈</text>
+  <text x="953" y="410" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">分段 · 封装 · 拥塞控制</text>
+
+  <text x="953" y="450" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="963" y="444" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">ip_queue_xmit()</text>
+
+  <rect x="864" y="458" width="178" height="72" rx="8" fill="#0E2841" stroke="#156082" stroke-width="1.5"/>
+  <text x="953" y="488" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Netfilter / TC</text>
+  <text x="953" y="510" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">iptables 规则 · 流量整形</text>
+
+  <text x="953" y="550" text-anchor="middle" font-size="12" fill="#614F96" font-family="sans-serif">▼</text>
+  <text x="963" y="544" text-anchor="start" font-size="10" fill="#614F96" font-family="sans-serif">ndo_start_xmit()</text>
+
+  <rect x="864" y="558" width="178" height="72" rx="8" fill="#2D1B55" stroke="#614F96" stroke-width="1.5"/>
+  <text x="953" y="588" text-anchor="middle" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">NIC 驱动</text>
+  <text x="953" y="610" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">DMA 映射 → 发送队列</text>
+
+  <text x="953" y="648" text-anchor="middle" font-size="12" fill="#196B24" font-family="sans-serif">▼</text>
+
+  <rect x="864" y="658" width="178" height="44" rx="8" fill="#0A0A1A" stroke="#1E293B" stroke-width="1.5"/>
+  <text x="953" y="685" text-anchor="middle" font-size="13" fill="#C8BEE0" font-weight="bold" font-family="sans-serif">网卡 (NIC) 硬件</text>
+
+  <!-- 连接箭头：从中间面板指向两侧被隔离的层 -->
+  <!-- 指向存储栈的 VFS -->
+  <line x1="300" y1="140" x2="252" y2="303" stroke="#E97132" stroke-width="1" stroke-dasharray="4,3"/>
+  <circle cx="252" cy="303" r="3" fill="#E97132"/>
+  <!-- 指向存储栈的 Block Layer -->
+  <line x1="300" y1="332" x2="252" y2="503" stroke="#E97132" stroke-width="1" stroke-dasharray="4,3"/>
+  <circle cx="252" cy="503" r="3" fill="#E97132"/>
+  <!-- 指向网络栈的 Socket Layer -->
+  <line x1="800" y1="236" x2="848" y2="303" stroke="#E97132" stroke-width="1" stroke-dasharray="4,3"/>
+  <circle cx="848" cy="303" r="3" fill="#E97132"/>
+  <!-- 指向网络栈的 Netfilter -->
+  <line x1="800" y1="428" x2="848" y2="503" stroke="#E97132" stroke-width="1" stroke-dasharray="4,3"/>
+  <circle cx="848" cy="503" r="3" fill="#E97132"/>
+</svg>
+</div>
+</body>
+</html>

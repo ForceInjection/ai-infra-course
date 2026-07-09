@@ -1,6 +1,6 @@
 # 模块 1：Linux 基础与容器技术入门
 
-> 90 分钟 &nbsp;|&nbsp; 42 页 PPT &nbsp;|&nbsp; 4 个 Bash 脚本 &nbsp;|&nbsp; 4 个可视化 HTML
+> 90 分钟 &nbsp;|&nbsp; 42 页 PPT &nbsp;|&nbsp; 4 个 Bash 脚本 &nbsp;|&nbsp; 5 个可视化 HTML
 
 ## 目录结构
 
@@ -19,7 +19,8 @@
 │   ├── 02_cgroup_demo.sh              #   Cgroup 资源限制 (PPT §2, 第15页)
 │   ├── 03_overlayfs_demo.sh           #   OverlayFS 分层存储 (PPT §3, 第22页)
 │   └── 04_docker_layer_demo.sh        #   Docker 镜像分层 (PPT §3, 第25页)
-└── visuals/                           # 可视化 HTML (4 个)
+└── visuals/                           # 可视化 HTML (5 个)
+    ├── linux-io-stack.html            #   Linux I/O 栈 — 存储栈与网络栈 6 层调用关系
     ├── overlayfs-demo.html            #   OverlayFS + COW 交互演示
     ├── pid-namespace-demo.html        #   PID Namespace Host vs Container 双视角
     ├── docker-run-gpus-all.html       #   docker run --gpus all 完整调用链路
@@ -30,6 +31,7 @@
 
 | 文件                           | 用途                                                | 教学场景                                          |
 | ------------------------------ | --------------------------------------------------- | ------------------------------------------------- |
+| `linux-io-stack.html`          | 存储栈 (write→NVMe) + 网络栈 (send→NIC) 6 层调用链  | 讲解内核空间时打开，对比两条 I/O 路径的共性与差异  |
 | `overlayfs-demo.html`          | OverlayFS 三层 (lower/upper/merged) + Copy-on-Write | 讲解 Docker 分层存储时打开，点击按钮演示 COW 过程 |
 | `pid-namespace-demo.html`      | Host vs Container 双栏进程列表对比                  | 讲解 PID Namespace 时打开，启动容器观察 PID 映射  |
 | `docker-run-gpus-all.html`     | `docker run --gpus all` 完整调用链路                | 课程收尾时打开，用一条命令串起整节课知识点        |
