@@ -25,7 +25,7 @@
 
 | 文件                | 用途                                | 教学场景                                                                                                                 |
 | ------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `k8s-gpu-flow.html` | K8s GPU 调度全链路 — 7 步可交互动画 | 第 48 页全链路回顾时打开，逐步骤讲解: kubectl → API Server → Scheduler → kubelet → Device Plugin → NVIDIA CTK → 容器启动 |
+| [`k8s-gpu-flow.html`](visuals/k8s-gpu-flow.html) | K8s GPU 调度全链路 — 7 步可交互动画 | 第 48 页全链路回顾时打开，逐步骤讲解: kubectl → API Server → Scheduler → kubelet → Device Plugin → NVIDIA CTK → 容器启动 |
 
 **交互方式**: 点击「下一步」逐步查看每个组件的职责和日志；点击「自动」7 步自动播放 (每步 1.2s)。右侧面板显示每步的详细解释。
 
@@ -70,7 +70,7 @@
 | Kind        | Docker 中运行 K8s (部分 GPU 支持) |
 | 可视化 HTML | 浏览器直接打开，无需服务器        |
 
-详见 `lab-environment.md`。
+详见 [`lab-environment.md`](lab-environment.md)。
 
 ## 所需软件
 
@@ -99,7 +99,7 @@
 | 作业 2: 机制分析     | ★★★  | 阅读 NVIDIA Device Plugin 源码，画出 Allocate 调用时序 |
 | 作业 3: 调度方案设计 | ★★★★ | 设计支持 GPU 拓扑感知的调度方案                        |
 
-详见 `homework.md`。
+详见 [`homework.md`](homework.md)。
 
 ## 参考来源
 
