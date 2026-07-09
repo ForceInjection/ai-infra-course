@@ -13,11 +13,11 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; backg
 .main-wrap { max-width:1250px; width:100%; margin:0 auto; padding:0 10px 8px; display:flex; gap:14px; flex:1; min-height:0; align-items:flex-start; }
 .main-left { flex:1; min-width:0; display:flex; align-items:center; justify-content:center; }
 .main-right { width:400px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
-.main-right .detail-panel { height:560px; overflow-y:auto; background:#231440; border:1px solid #432879; border-radius:8px; padding:14px 16px; margin-bottom:8px; flex-shrink:0; }
+.main-right .detail-panel { height:630px; overflow-y:auto; background:#231440; border:1px solid #432879; border-radius:8px; padding:14px 16px; margin-bottom:8px; flex-shrink:0; }
 .detail-panel .note { color:#C8BEE0; font-size:0.8em; line-height:1.7; }
 .detail-panel .note strong { color:#F8F6FB; }
 .detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.78em; background:#0E2841; padding:1px 5px; border-radius:3px; color:#E97132; }
-.actions { display:flex; gap:6px; flex-wrap:wrap; }
+.actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; }
 .actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; background:#432879; color:#C8BEE0; transition:all 0.15s; }
 .actions button:hover { transform:translateY(-1px); filter:brightness(1.2); }
 .actions button:disabled { opacity:0.5; cursor:not-allowed; }
@@ -199,8 +199,11 @@ function draw() {
   var gpuY = START_Y + 4 * (RH + GAP);
   if (step >= 6) {
     var mid6 = drvY + (gpuY - drvY) / 2;
+    var drvCenter = START_Y + 3 * (RH + GAP) + RH/2;
     h+=arrow(RX + RW - 120, drvY + 6, RX + RW - 120, gpuY - 6, '#196B24', 3);
     h+=T(RX + RW - 50, mid6, 'ioctl(fd, NVIDIA_MMAP)', 12, '#4ade80', 'middle');
+    // cuMemAlloc → ioctl → mmap path, aligned with Driver layer center
+    h+=T(RX + RW/2 + 30, drvCenter + 4, 'cuMemAlloc → RM 分配 → ioctl → mmap 映射', 11, '#94a3b8', 'start');
     h+=T(RX + RW - 360, gpuY + RH/2, 'GPU MMU 映射显存页 → 返回 GPU 虚拟地址 → 写回 ptr', 12, '#C8BEE0', 'start');
   }
 
@@ -213,10 +216,10 @@ function draw() {
     "<strong>CUDA 软件栈 — 5 层架构</strong><br><br>从应用程序到 GPU 硬件，一次 CUDA 调用穿越 5 层：<br><br><code>应用程序</code> → <code>CUDA Runtime API</code> → <code>CUDA Driver API</code> → <code>NVIDIA Driver</code> → <code>GPU 硬件</code><br><br>关键在于：<strong>所有上层框架</strong>（PyTorch、vLLM、TensorFlow）最终都通过 CUDA Driver API 与 GPU 通信。<br><br>HAMi 在 Driver API 层用 <code>LD_PRELOAD</code> 拦截，一举控制所有框架的 GPU 资源。<br><br>点击「下一步」追踪一次 <code>cudaMalloc</code> →",
     "<strong>Step 1: vLLM 调用 cudaMalloc</strong><br><br>vLLM 的 PagedAttention 需要为 KV Cache Block 分配 GPU 显存。<br><br><code>cudaMalloc(&ptr, 1GB)</code><br><br>这是 CUDA Runtime API 的函数，vLLM 直接或间接（通过 PyTorch）调用它。",
     "<strong>Step 2: libcudart 处理</strong><br><br><code>libcudart.so</code> 是 CUDA Runtime 库。<br><br>它对参数做校验（指针非空、size > 0），然后将调用转换为 Driver API 格式。<br><br>注意：Runtime API 是 Driver API 的<strong>便捷封装</strong>，每个 Runtime 函数内部都会调用对应的 Driver 函数。",
-    "<strong>Step 3: cudaMalloc → cuMemAlloc</strong><br><br><code>cudaMalloc</code> 内部调用 <code>cuMemAlloc</code>（Driver API）。<br><br>Runtime API 函数几乎都是 Driver API 的薄封装：<br><br><code>cudaMalloc</code> → <code>cuMemAlloc</code><br><code>cudaLaunchKernel</code> → <code>cuLaunchKernel</code><br><code>cudaMemcpy</code> → <code>cuMemcpyHtoD / cuMemcpyDtoH</code><br><br><strong>这就是为什么拦截 Driver API 能控制一切。</strong>",
+    "<strong>Step 3: 为什么分 Runtime API 和 Driver API？</strong><br><br><code>cudaMalloc</code> 内部调用 <code>cuMemAlloc</code>（Driver API）。<br><br><strong>为什么分两层？</strong><br><br><strong>Runtime API</strong> (<code>libcudart.so</code>)：<br>• 自动管理 Context、Module、JIT 编译<br>• 1 行 <code>cudaMalloc</code> 即可——适合 99% 的开发者<br><br><strong>Driver API</strong> (<code>libcuda.so</code>)：<br>• 需要手动 <code>cuInit</code> → <code>cuCtxCreate</code> → <code>cuMemAlloc</code><br>• 精细控制多 Context、Stream、CUDA Graph<br>• 框架开发者（PyTorch/vLLM/TensorRT）必经之路<br><br>Runtime 函数几乎都是 Driver 的薄封装：<br><code>cudaMalloc</code> → <code>cuMemAlloc</code><br><code>cudaLaunchKernel</code> → <code>cuLaunchKernel</code><br><code>cudaMemcpy</code> → <code>cuMemcpyHtoD / cuMemcpyDtoH</code><br><br><strong>这就是为什么拦截 Driver API 能控制一切。</strong>",
     "<strong>Step 4: ⚡ HAMi 拦截点!</strong><br><br>HAMi 的 <code>libvgpu.so</code> 通过 <code>LD_PRELOAD</code> 在 Driver API 层插入自己的 <code>cuMemAlloc</code>。<br><br>位置：<strong>CUDA Driver API 与应用之间</strong>。<br><br>这个位置极其关键：<br>• 上层所有框架（PyTorch/vLLM/TF）都经过这里<br>• 下层只有一个 NVIDIA Driver，无需修改<br>• 不需要重新编译任何程序<br>• 设置环境变量 <code>LD_PRELOAD=libvgpu.so</code> 即可生效",
     "<strong>Step 5: HAMi 配额检查</strong><br><br><code>if (used + 1GB > quota) → return CUDA_ERROR_OUT_OF_MEMORY</code><br><br>这跟课堂的 <code>01_mymalloc.c</code> 完全一样：<br><br>• <code>malloc</code> → <code>cuMemAlloc</code><br>• <code>used 计数器</code> → 显存配额<br>• <code>return NULL</code> → <code>return CUDA_ERROR_OUT_OF_MEMORY</code><br><br>「你刚写的 30 行 malloc hook，就是 HAMi 的核心原理。」",
-    "<strong>Step 6: NVIDIA Driver 与 GPU 硬件</strong><br><br>真正的 <code>cuMemAlloc</code> 通过 <code>ioctl</code> 系统调用进入内核态的 NVIDIA Driver (<code>nvidia.ko</code>)。<br><br>Driver 通过 PCIe 与 GPU 通信，GPU MMU 映射显存页，返回 GPU 虚拟地址。<br><br>之后 CUDA kernel 就可以通过这个地址读写显存了。",
+    "<strong>Step 6: NVIDIA Driver 与 GPU 硬件</strong><br><br>真正的 <code>cuMemAlloc</code> 的执行路径：<br><br><code>cuMemAlloc(&ptr, 1GB)</code><br>→ <code>libcuda.so</code> [用户态 RM] — 校验参数，构造 RM 请求<br>→ <code>ioctl(NV_ESC_RM_ALLOC)</code> — 陷入内核<br>→ <code>nvidia.ko</code> [内核态 RM] — 从 VRAM 划出一块，更新 GPU 页表<br>→ <code>mmap(ptr, 1GB, ...)</code> — 将 VRAM 物理页映射到用户进程虚拟地址空间<br>→ GPU MMU 为这块地址建立映射 → 返回 GPU 虚拟地址写入 <code>*ptr</code><br><br><strong>NVIDIA 内核驱动 (nvidia.ko) 的核心职责：</strong><br><br>1. <strong>显存管理</strong> — RM (Resource Manager) 维护 VRAM 页表，分配/释放显存<br>2. <strong>命令提交</strong> — 将 kernel/内存拷贝打包为 Command Buffer，通过 PCIe 写入 GPU Command Queue<br>3. <strong>上下文切换</strong> — 管理多个 CUDA Context，各有独立的显存地址空间和 CUDA Stream<br>4. <strong>中断处理</strong> — GPU 完成后通过 MSI-X 中断通知 CPU，Driver 唤醒等待线程<br>5. <strong>错误处理</strong> — 检测 ECC 纠错、超时、PCIe 链路错误，必要时 GPU Reset<br><br>类比：NVIDIA Driver 之于 GPU 就像 OS 内核之于 CPU。",
     "<strong>总结: 为什么 Driver API 是「咽喉要道」？</strong><br><br>1. <strong>必经之路</strong>: 所有 CUDA 应用最终都调 Driver API<br>2. <strong>不改源码</strong>: LD_PRELOAD 环境变量即可，无需重新编译<br>3. <strong>完整控制</strong>: 拦截 cuMemAlloc（显存）+ cuLaunchKernel（算力）= GPU 资源共享<br>4. <strong>类比你写的代码</strong>: <code>01_mymalloc.c</code> 的 malloc hook = HAMi 的 cuMemAlloc hook，原理一字不差"
   ];
   document.getElementById("detail-panel").innerHTML = '<div class="note">'+descs[step]+'</div>';
