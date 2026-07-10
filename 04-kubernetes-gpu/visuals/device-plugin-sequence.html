@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NVIDIA Device Plugin — gRPC 交互时序图</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:12px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#F8F6FB; }
+.main-wrap { max-width:1250px; width:100%; margin:0 auto; padding:0 10px 8px; display:flex; gap:14px; flex:1; min-height:0; align-items:stretch; }
+.main-left { flex:1; min-width:0; }
+.main-right { width:400px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+.main-right .detail-panel { flex:1; overflow-y:auto; background:#231440; border:1px solid #432879; border-radius:8px; padding:14px 16px; margin-bottom:8px; }
+.detail-panel .note { color:#C8BEE0; font-size:0.85em; line-height:1.7; }
+.detail-panel .note strong { color:#F8F6FB; }
+.detail-panel code { font-family:"SF Mono","Fira Code",monospace; font-size:0.78em; background:#0E2841; padding:1px 5px; border-radius:3px; color:#E97132; }
+.actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; }
+.actions button { padding:7px 14px; border:none; border-radius:6px; font-size:0.82em; cursor:pointer; font-weight:600; background:#432879; color:#C8BEE0; transition:all 0.15s; }
+.actions button:hover { transform:translateY(-1px); filter:brightness(1.2); }
+.actions button:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-next { background:#156082 !important; color:#FFFFFF !important; }
+.btn-play { background:#196B24 !important; color:#FFFFFF !important; }
+svg { display:block; width:100%; height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>NVIDIA Device Plugin — gRPC 交互时序图</h1>
+</div>
+<div class="main-wrap">
+  <div class="main-left">
+    <svg id="main-svg" viewBox="0 0 1100 1050"></svg>
+  </div>
+  <div class="main-right">
+    <div class="detail-panel" id="detail-panel">
+      <div class="note">
+        <strong>Device Plugin 时序图</strong><br><br>
+        NVIDIA Device Plugin 通过 gRPC 与 kubelet 交互，为 K8s 扩展 GPU 支持。<br><br>
+        两个核心 API：<br>
+        • <code>ListAndWatch</code> — 上报 GPU<br>
+        • <code>Allocate</code> — 分配设备<br><br>
+        点击「下一步」逐步查看 →
+      </div>
+    </div>
+    <div class="actions">
+      <button onclick="prevStep()" id="btn-prev">&#9664; 上一步</button>
+      <button class="btn-next" onclick="nextStep()" id="btn-next">下一步 &#9654;</button>
+      <button class="btn-play" onclick="playAll()">&#9654; 自动</button>
+      <button onclick="resetAll()">&#8634; 重置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var step=0,maxSteps=6,playing=false;
+function nextStep(){if(!playing&&step<maxSteps){step++;draw();}}
+function prevStep(){if(!playing&&step>0){step--;draw();}}
+function resetAll(){step=0;draw();}
+async function playAll(){
+  if(playing)return;playing=true;
+  document.getElementById("btn-next").disabled=true;resetAll();
+  for(var i=0;i<maxSteps;i++){await new Promise(function(r){setTimeout(r,1300)});step++;draw();}
+  playing=false;document.getElementById("btn-next").disabled=false;
+}
+function R(x,y,w,h,f,s,sw,rx){sw=sw||0.5;rx=rx||2;return'<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+rx+'" fill="'+f+'" stroke="'+s+'" stroke-width="'+sw+'"/>';}
+function T(x,y,t,sz,c,a,w){return'<text x="'+x+'" y="'+y+'" text-anchor="'+(a||'middle')+'" font-size="'+sz+'" fill="'+c+'" font-weight="'+(w||'normal')+'" font-family="sans-serif">'+t+'</text>';}
+function arrow(x1,y1,x2,y2,c,sw,d){
+  var dx=x2-x1,dy=y2-y1,len=Math.sqrt(dx*dx+dy*dy);if(len<1)return'';
+  sw=sw||2;c=c||'#432879';
+  var h='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+c+'" stroke-width="'+sw+'"'+(d?' stroke-dasharray="'+d+'"':'')+'/>';
+  var ux=dx/len,uy=dy/len,sz=9,px=x2-ux*sz,py=y2-uy*sz;
+  h+='<polygon points="'+x2+','+y2+' '+(px-uy*sz*0.5)+','+(py+ux*sz*0.5)+' '+(px+uy*sz*0.5)+','+(py-ux*sz*0.5)+'" fill="'+c+'"/>';
+  return h;
+}
+
+// 5 components, each has a vertical lifeline
+var comps=[
+  {id:'kubectl',   label:'kubectl',      sub:'用户操作',          color:'#A02B93'},
+  {id:'apiserver', label:'API Server',    sub:'K8s 入口',          color:'#156082'},
+  {id:'kubelet',   label:'kubelet',       sub:'节点代理',          color:'#156082'},
+  {id:'plugin',    label:'Device Plugin', sub:'nvidia-device-plugin',color:'#E97132'},
+  {id:'gpu',       label:'GPU / CTK',     sub:'H100 + NVIDIA CTK', color:'#334155'},
+];
+var N=comps.length, bw=140, bh=75, headY=80, lineTop=headY+bh+14, lineBot=900;
+var cx=[]; for(var i=0;i<N;i++){comps[i].x=50+i*200; cx[i]=comps[i].x+bw/2;}
+
+function mid(a,b){return(cx[a]+cx[b])/2;}
+function lbl(a,b,y,t,sz,c,w){return T(mid(a,b),y,t,sz,c,'middle',w);}
+
+function draw(){
+  var svg=document.getElementById("main-svg"),W=1100,H=1050,h='';
+  h+=R(0,0,W,H,'#1A0F2E','#432879',2,16);
+
+  var titles=[
+    "Device Plugin — gRPC 交互时序图",
+    "1. Device Plugin 启动 → Register() 向 kubelet 注册",
+    "2. kubelet 调用 ListAndWatch() → Device Plugin 返回 GPU 列表",
+    "3. 用户提交 GPU Pod → Scheduler 调度 → Bind 到 Node",
+    "4. kubelet 调用 Allocate() → Device Plugin 分配 GPU 设备",
+    "5. Device Plugin 返回挂载信息 → 容器获得 GPU",
+    "总结: Device Plugin — K8s 的 GPU 扩展机制"
+  ];
+  h+=T(W/2,28,titles[Math.min(step,titles.length-1)],17,'#F8F6FB','middle','bold');
+
+  // Draw headers + lifelines
+  for(var i=0;i<N;i++){
+    var c=comps[i];
+    var active=(step===1&&(i===2||i===3))||(step===2&&(i===2||i===3))||
+              (step===3&&i<=2)||(step===4&&(i===2||i===3))||
+              (step===5&&(i>=2));
+    var sw=active?2.5:1;
+    var stroke=c.color;
+    h+=R(c.x,headY,bw,bh,'#231440',stroke,sw,8);
+    h+=T(cx[i],headY+30,c.label,14,'#F8F6FB','middle','bold');
+    h+=T(cx[i],headY+54,c.sub,11,'#8A7BB5','middle');
+    // Lifeline
+    h+='<line x1="'+cx[i]+'" y1="'+lineTop+'" x2="'+cx[i]+'" y2="'+lineBot+'" stroke="'+stroke+'" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.6"/>';
+  }
+
+  // Interaction rows — evenly spaced Y
+  // my[i] = Y center of interaction i
+  var m=[];
+  for(var i=1;i<=6;i++) m[i]=lineTop+28+(i-1)*78;
+
+  // Step 1: Device Plugin → kubelet
+  if(step>=1){
+    h+=arrow(cx[3],m[1],cx[2],m[1],'#E97132',2.5);
+    h+=lbl(2,3,m[1]-20,'Register(resource: nvidia.com/gpu)','13','#E97132','bold');
+  }
+
+  // Step 2: kubelet → Device Plugin (request) + Device Plugin → kubelet (response)
+  if(step>=2){
+    h+=arrow(cx[2],m[2]-10,cx[3],m[2]-10,'#0F9ED5',2.5);
+    h+=lbl(2,3,m[2]-28,'ListAndWatch()','13','#0F9ED5','bold');
+    h+=arrow(cx[3],m[2]+12,cx[2],m[2]+12,'#4ade80',2,step>=3?'4,3':'');
+    h+=lbl(2,3,m[2]+32,'GPU-0 Healthy, GPU-1 Healthy','11','#4ade80','');
+    h+=lbl(2,3,m[2]+50,'kubelet → Node Status: nvidia.com/gpu=2','11','#4ade80','');
+  }
+
+  // Step 3: kubectl → API Server → kubelet
+  if(step>=3){
+    h+=arrow(cx[0],m[3]-10,cx[1],m[3]-10,'#A02B93',1.5);
+    h+=lbl(0,1,m[3]-26,'kubectl apply -f gpu-pod.yaml','12','#A02B93','bold');
+    h+=arrow(cx[1],m[3]+12,cx[2],m[3]+12,'#156082',1.5);
+    h+=lbl(1,2,m[3]+28,'Filter → Score → Bind Pod','11','#156082','');
+  }
+
+  // Step 4: kubelet → Device Plugin (Allocate)
+  if(step>=4){
+    h+=arrow(cx[2],m[4],cx[3],m[4],'#E97132',2.5);
+    h+=lbl(2,3,m[4]-20,'Allocate(device_ids: [GPU-0])','13','#E97132','bold');
+  }
+
+  // Step 5: Plugin → kubelet (Response) + kubelet → GPU (Mount)
+  if(step>=5){
+    // Response
+    h+=arrow(cx[3],m[5]-10,cx[2],m[5]-10,'#0F9ED5',2);
+    h+=lbl(2,3,m[5]-26,'AllocateResponse(envs, mounts)','12','#0F9ED5','bold');
+    // Mount
+    h+=arrow(cx[2],m[6]-14,cx[4],m[6]-14,'#196B24',2.5);
+    h+=lbl(2,4,m[6]-30,'CRI → NVIDIA CTK: mknod + mount','11','#196B24','bold');
+    // GPU container indicator
+    h+=R(comps[4].x+24,m[6]+4,bw-48,38,'#052e16','#4ade80',2,8);
+    h+=T(cx[4],m[6]+28,'GPU 容器运行 ✓','12','#4ade80','middle','bold');
+  }
+
+  // Step 6: Summary
+  if(step>=6){
+    var sx=60,sy=890,sw=980,sh=105;
+    h+=R(sx,sy,sw,sh,'#231440','#432879',1.5,8);
+    h+=T(W/2,sy+24,'Device Plugin — K8s 扩展 GPU 的三步流程','14','#F8F6FB','middle','bold');
+    var s1=sx+40,s2=sx+380,s3=sx+720;
+    h+=R(s1,sy+42,300,52,'#231440','#0F9ED5',1,5);
+    h+=T(s1+150,sy+60,'① ListAndWatch','12','#0F9ED5','middle','bold');
+    h+=T(s1+150,sy+82,'Device Plugin 上报 GPU 列表','10','#8A7BB5','middle');
+    h+=R(s2,sy+42,300,52,'#231440','#E97132',1,5);
+    h+=T(s2+150,sy+60,'② Allocate','12','#E97132','middle','bold');
+    h+=T(s2+150,sy+82,'kubelet 请求分配 GPU 设备','10','#8A7BB5','middle');
+    h+=R(s3,sy+42,180,52,'#231440','#196B24',1,5);
+    h+=T(s3+90,sy+60,'③ CTK 挂载','12','#196B24','middle','bold');
+    h+=T(s3+90,sy+82,'mknod + mount','10','#8A7BB5','middle');
+    h+=T(W/2,sy+sh+16,'不改 K8s 源码 — GPU / FPGA / RDMA / TPU 均以 Plugin 机制接入','12','#fbbf24','middle');
+  }
+
+  var descs=[
+    "<strong>Device Plugin 时序图</strong><br><br>NVIDIA Device Plugin 通过 gRPC 与 kubelet 交互，为 K8s 扩展 GPU 支持。<br><br>核心 API：<br>• <code>ListAndWatch</code> — 上报 GPU<br>• <code>Allocate</code> — 分配设备<br><br>点击「下一步」逐步查看 →",
+    "<strong>Step 1: Register() 注册</strong><br><br>Device Plugin 启动后调用 gRPC <code>Register()</code>，向 kubelet 注册资源：<br><br><code>resource_name: 'nvidia.com/gpu'</code><br><br>从此 kubelet 知道该节点有 <code>nvidia.com/gpu</code> 这种扩展资源。",
+    "<strong>Step 2: ListAndWatch()</strong><br><br>① kubelet 调用 <code>ListAndWatch()</code>（gRPC 长连接流）<br>② Device Plugin 返回：<code>[{ID:'GPU-0',health:'Healthy'}, ...]</code><br>③ kubelet 写入 Node Status: <code>capacity: nvidia.com/gpu: 2</code><br><br>此后持续监控：GPU 故障 → Plugin 上报 → kubelet 更新 → K8s 驱逐 Pod。",
+    "<strong>Step 3: Pod 调度</strong><br><br><code>kubectl apply -f gpu-pod.yaml</code><br>Pod spec: <code>resources.limits: nvidia.com/gpu: 1</code><br><br>Scheduler 执行三阶段：<br>① <strong>Filter</strong> — 排除 GPU=0 的节点<br>② <strong>Score</strong> — 按 GPU 数量/拓扑打分<br>③ <strong>Bind</strong> — Pod 绑定到最佳节点<br><br>kubelet 收到 Pod spec → 需要 GPU 设备。",
+    "<strong>Step 4: Allocate()</strong><br><br>kubelet 调用 Device Plugin 的 <code>Allocate()</code>：<br><code>AllocateRequest {<br>  devices_ids: ['GPU-0']<br>}</code><br><br>Device Plugin：<br>• 根据 device_id 查找设备文件路径<br>• 准备环境变量和挂载列表<br>• 返回 <code>AllocateResponse</code>",
+    "<strong>Step 5: 挂载到容器</strong><br><br>① Device Plugin → kubelet: <code>AllocateResponse</code><br>&nbsp;&nbsp;&nbsp;env: NVIDIA_VISIBLE_DEVICES=GPU-0<br>&nbsp;&nbsp;&nbsp;mounts: /dev/nvidia0 + 驱动库<br><br>② kubelet → CRI (containerd) → <strong>NVIDIA CTK</strong>：<br>&nbsp;&nbsp;&nbsp;mknod /dev/nvidia0<br>&nbsp;&nbsp;&nbsp;mount GPU driver libs<br><br>③ 容器启动 → <code>nvidia-smi</code> 可用。",
+    "<strong>总结: Device Plugin 的设计思想</strong><br><br>三步流程：<br>① <strong>发现</strong> (ListAndWatch) — K8s 不认识 GPU<br>② <strong>分配</strong> (Allocate) — Pod 需要 GPU<br>③ <strong>挂载</strong> (CTK) — 设备到容器<br><br><strong>关键设计</strong>: K8s 核心不改代码。<br>GPU / FPGA / RDMA / TPU 统一以 Plugin 机制接入。"
+  ];
+  document.getElementById("detail-panel").innerHTML='<div class="note">'+descs[step]+'</div>';
+  svg.innerHTML=h;
+}
+draw();
+</script>
+</body>
+</html>

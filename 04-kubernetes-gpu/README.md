@@ -1,6 +1,6 @@
 # 模块 4：Kubernetes 入门与 GPU 工作负载调度
 
-> 120 分钟 &nbsp;|&nbsp; 52 页 PPT &nbsp;|&nbsp; 3 个 YAML 文件 &nbsp;|&nbsp; 1 个可视化 HTML
+> 120 分钟 &nbsp;|&nbsp; 52 页 PPT &nbsp;|&nbsp; 3 个 YAML 文件 &nbsp;|&nbsp; 2 个可视化 HTML
 
 ## 目录结构
 
@@ -17,8 +17,9 @@
 │   ├── 01_nginx_demo.yaml       #   Nginx Deployment + Service (PPT 第 16 页 [动手])
 │   ├── 02_gpu_pod.yaml          #   GPU Pod — nvidia-smi 测试 (PPT 第 45 页 [动手 1])
 │   └── 03_gpu_deploy.yaml       #   GPU Deployment — 生产级工作负载 (PPT 第 45-46 页 [动手 1+2])
-└── visuals/                     # 可视化 HTML (1 个)
-    └── k8s-gpu-flow.html        #   K8s GPU 调度全链路: 7 步交互动画 (PPT 第 48 页)
+└── visuals/                          # 可视化 HTML (2 个)
+    ├── k8s-gpu-flow.html             #   K8s GPU 调度全链路: 7 步交互动画 (PPT 第 48 页)
+    └── device-plugin-sequence.html   #   Device Plugin 交互时序: 7 步 gRPC 调用流程
 ```
 
 ## 可视化 HTML
@@ -26,6 +27,7 @@
 | 文件                                                  | 用途                                | 教学场景                                                                                                                 |
 | ----------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | [K8s GPU 调度全链路可视化](visuals/k8s-gpu-flow.html) | K8s GPU 调度全链路 — 7 步可交互动画 | 第 48 页全链路回顾时打开，逐步骤讲解: kubectl → API Server → Scheduler → kubelet → Device Plugin → NVIDIA CTK → 容器启动 |
+| [Device Plugin 交互时序](visuals/device-plugin-sequence.html) | Device Plugin gRPC 接口 — Register / ListAndWatch / Allocate | 讲解 Device Plugin 机制时打开，逐步追踪 GPU 发现与分配全流程 |
 
 **交互方式**: 点击「下一步」逐步查看每个组件的职责和日志；点击「自动」7 步自动播放 (每步 1.2s)。右侧面板显示每步的详细解释。
 
