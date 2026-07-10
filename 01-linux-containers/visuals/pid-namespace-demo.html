@@ -243,7 +243,7 @@ function renderProcTree(procs, isContainer, highlightMap) {
     return `<div class="line${pad} ${cls}">
       <span class="usr">${p.user}</span>
       <span class="pid" style="color:${isContainer && p.contPid ? '#60a5fa' : p.type === 'kernel' ? '#fbbf24' : '#e2e8f0'}">${isContainer && p.contPid !== undefined ? p.contPid : p.pid}</span>
-      <span class="ppid">${isContainer ? (p.contPid ? (p.ppid === containerNS?.bashPid ? 1 : '—') : '—') : p.ppid}</span>
+      <span class="ppid">${isContainer ? (p.contPid ? (pidMap[p.ppid] !== undefined ? pidMap[p.ppid] : (p.ppid === containerNS?.bashPid ? 1 : '—')) : '—') : p.ppid}</span>
       <span class="cmd">${p.cmd}</span>
     </div>`;
   }).join("");
