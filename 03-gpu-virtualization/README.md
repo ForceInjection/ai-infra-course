@@ -1,6 +1,6 @@
 # 模块 3：GPU 虚拟化与容器化实践
 
-> 90 分钟 &nbsp;|&nbsp; 42 页 PPT &nbsp;|&nbsp; 2 个 C 程序 &nbsp;|&nbsp; 2 个可视化 HTML
+> 90 分钟 &nbsp;|&nbsp; 42 页 PPT &nbsp;|&nbsp; 2 个 C 程序 &nbsp;|&nbsp; 3 个可视化 HTML
 
 ## 目录结构
 
@@ -13,8 +13,9 @@
 │   ├── 01_mymalloc.c      # LD_PRELOAD malloc hook 库 (PPT 第 12 + 33 页)
 │   └── 02_test_malloc.c   # 配额测试程序
 └── visuals/
-    ├── ld-preload-flow.html  # LD_PRELOAD 拦截流程 6 步动画
-    └── cuda-stack.html       # CUDA 软件栈 — 一次 cudaMalloc 穿越 5 层
+    ├── ld-preload-flow.html          # LD_PRELOAD 拦截流程 6 步动画
+    ├── cuda-stack.html               # CUDA 软件栈 — 一次 cudaMalloc 穿越 5 层
+    └── gpu-sharing-comparison.html   # 四种方案对比 — MIG/Time-Slicing/HAMi/MPS
 ```
 
 ## 可视化 HTML
@@ -23,6 +24,7 @@
 | ---------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------- |
 | [LD_PRELOAD 拦截原理可视化](visuals/ld-preload-flow.html)              | LD_PRELOAD 拦截流程 6 步动画       | 讲解 HAMi CUDA 拦截机制时打开，点击逐步查看拦截原理  |
 | [CUDA 软件栈 — 一次 cudaMalloc 调用穿越 5 层](visuals/cuda-stack.html) | CUDA 软件栈 5 层架构 + HAMi 拦截点 | 讲解 CUDA 分层架构时打开，追踪一次 cudaMalloc 全路径 |
+| [GPU 虚拟化方案对比](visuals/gpu-sharing-comparison.html)               | 四种方案 — MIG·Time-Slicing·HAMi·MPS | 讲解 GPU 虚拟化方案选型时打开，对比隔离级别与灵活性 |
 
 ## 教学流程
 
