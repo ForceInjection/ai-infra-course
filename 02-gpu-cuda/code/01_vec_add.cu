@@ -155,17 +155,23 @@ int main() {
     else
         printf("  正确性验证: 失败 (%d / %d errors)\n\n", errors, N);
 
-    // 思考题
-    printf("--- 思考题 (对应 PPT 第 30-31 页) ---\n");
-    printf("1. H2D + D2H 占总时间的 %.0f%%，Kernel 只占 %.0f%%\n",
-           (ms_h2d + ms_d2h) / ms_total * 100, ms_kernel / ms_total * 100);
-    printf("   -> 为什么 GPU 整体比 CPU 还慢？数据传输的开销来自哪里？\n");
-    printf("   -> (参考 PPT 第 22 页: PCIe Gen5 x16 = 128 GB/s vs HBM3 = 3.35 TB/s)\n\n");
-    printf("2. 如果 N=1024 (数据量 ~12 KB)，GPU 还比 CPU 快吗？\n");
-    printf("   -> 提示: 思考 kernel 启动开销 (~5-10 us) 和线程利用率\n\n");
-    printf("3. Kernel 有效带宽 %.0f GB/s vs H100 HBM3 理论带宽 3352 GB/s\n", bw);
-    printf("   -> 为什么差这么远？瓶颈是计算还是访存？\n");
-    printf("   -> (参考 PPT 第 12 页: 延迟金字塔)\n\n");
+    // 思考题 (对应 PPT 第 30-31 页)
+    printf("--- 思考题 (对应 PPT 第 30-31 页) ---\n\n");
+    printf("1. 当前数据量 N=16.8M，每个元素需 2 次读 (A,B) + 1 次写 (C)，\n");
+    printf("   请计算理论访存量 (bytes)。结合 Kernel 有效带宽 %.0f GB/s，\n", bw);
+    printf("   判断当前 kernel 是计算瓶颈还是访存瓶颈。\n");
+    printf("   提示: 比较 FLOPs/byte (算术强度) 与 GPU 峰值 FLOPs/Bandwidth\n\n");
+    printf("2. 如果 N=1024，GPU 加速比会变大还是变小？修改 N 的值并重新编译\n");
+    printf("   运行，验证你的判断。\n");
+    printf("   提示: GPU kernel 启动有 ~5-10 us 的固定开销\n\n");
+    printf("3. 假设模型推理需要将 200GB 数据通过 PCIe 传给 GPU 做计算。\n");
+    printf("   PCIe Gen4 x16 单向带宽 32 GB/s，如果 Kernel 只需 0.1ms：\n");
+    printf("   a) 总传输时间是多少？传输占多少比例？\n");
+    printf("   b) 这说明 GPU 编程中什么样的工程问题？\n\n");
+    printf("4. 线程索引公式 tid = blockIdx.x * blockDim.x + threadIdx.x\n");
+    printf("   中，blockDim.x 和 gridDim.x 分别由哪个启动参数决定？\n");
+    printf("   如果 N=16.8M 且 threads=128，blocks 数量变为多少？\n");
+    printf("   tid 的范围还是 0~N-1 吗？\n\n");
 
     // 清理
     CUDA_CHECK(cudaFree(d_a)); CUDA_CHECK(cudaFree(d_b)); CUDA_CHECK(cudaFree(d_c));

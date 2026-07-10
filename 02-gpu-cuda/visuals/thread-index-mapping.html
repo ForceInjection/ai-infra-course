@@ -36,16 +36,19 @@ svg { max-width:100%; max-height:100%; }
   <div class="main-right">
     <div class="detail-panel" id="detail-panel">
       <div class="note">
-        &#128161; <strong>线程索引映射</strong><br><br>
+        &#128161; <strong>线程索引映射 — 逻辑 vs 物理</strong><br><br>
         每个线程通过索引计算确定<strong>自己要处理哪个数据元素</strong>。<br><br>
         选择维度查看不同的映射方式:<br>
         &bull; <strong>1D</strong> — 向量，tid 直接算<br>
         &bull; <strong>2D</strong> — 矩阵，row/col 分别算<br>
         &bull; <strong>3D</strong> — 立方体，x/y/z 三维索引<br><br>
-        gridDim 和 blockDim 可以是一维、二维或三维，<strong>选择与数据形状匹配的维度</strong>能让线程索引计算更自然，无需手动换算 row/col。<br><br>
+        <strong>逻辑线程 vs 物理线程</strong><br>
+        GPU 物理线程有限 (RTX 3090 ~12.6 万同时运行)，但你可以启动 1678 万个逻辑线程。<br>
+        GPU 以 <strong>block 为单位分批调度 (Wave)</strong>：SM 先运行一批 block，完成后释放资源再接收下一批。<br>
+        <code>blockIdx</code> 是编译时分配的固定值——block 0 永远是 block 0，无论在哪个 SM、第几波执行。<br><br>
         所有映射必须做<strong>边界检查</strong> (if tid &lt; N)。<br><br>
-        实际场景中数据往往远大于线程数，此时一个线程通过 <strong>stride 循环</strong>处理多个数据元素：<br>
-        <code>for (i = tid; i &lt; N; i += gridSize)</code> — 一个线程负责多个元素。
+        数据远大于线程数时，一个线程通过 <strong>stride 循环</strong>处理多个元素：<br>
+        <code>for (i = tid; i &lt; N; i += gridSize)</code> — 跳步处理, 各线程交错覆盖全部数据。
       </div>
     </div>
     <div class="actions">
