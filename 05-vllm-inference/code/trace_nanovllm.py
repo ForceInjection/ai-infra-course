@@ -32,6 +32,8 @@ import argparse
 import os
 import sys
 
+from nanovllm import LLM, SamplingParams
+
 
 def setup_tracing():
     """Monkey-patch nano-vllm 核心模块，在关键操作点注入追踪日志。
