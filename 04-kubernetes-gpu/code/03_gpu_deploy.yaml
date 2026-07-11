@@ -6,6 +6,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gpu-inference
+  namespace: gpu-demo
   labels:
     app: gpu-inference
 spec:

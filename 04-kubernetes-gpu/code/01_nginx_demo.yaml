@@ -1,6 +1,14 @@
 # 模块 4：K8s 基础 — Nginx 完整示例 (ConfigMap + Deployment + Service)
 # 用法: kubectl apply -f 01_nginx_demo.yaml
 # 对应 PPT 第 16 页 [动手] K8s 初体验
+# 所有资源部署在 gpu-demo namespace
+
+---
+# ===== Namespace =====
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-demo
 
 ---
 # ===== ConfigMap: 自定义 nginx 首页 =====
@@ -9,6 +17,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: nginx-index
+  namespace: gpu-demo
   labels:
     app: nginx-demo
 data:
@@ -29,10 +38,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: nginx-demo
+  namespace: gpu-demo
   labels:
     app: nginx-demo
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: nginx-demo
@@ -70,6 +80,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: nginx-demo
+  namespace: gpu-demo
   labels:
     app: nginx-demo
 spec:
