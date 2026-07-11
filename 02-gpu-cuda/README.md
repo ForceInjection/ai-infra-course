@@ -1,6 +1,6 @@
 # 模块 2：GPU 硬件架构与 CUDA 编程入门
 
-> 90 分钟 &nbsp;|&nbsp; 53 页 PPT &nbsp;|&nbsp; 4 个 CUDA 程序 &nbsp;|&nbsp; 4 个可视化 HTML
+> 90 分钟 &nbsp;|&nbsp; 53 页 PPT &nbsp;|&nbsp; 4 个 CUDA 程序 &nbsp;|&nbsp; 5 个可视化 HTML
 
 ## 目录结构
 
@@ -13,7 +13,8 @@
 │   └── 01_vec_add.cu / 02_matmul_naive.cu / 03_matmul_tiled.cu / 04_device_query.cu
 └── visuals/
     ├── gpu-architecture.html / cuda-thread-hierarchy.html
-    └── shared-memory-tiling.html / thread-index-mapping.html
+    ├── shared-memory-tiling.html / thread-index-mapping.html
+    └── cuda-thread-hardware-mapping.html  # 线程层次 — 软件→逻辑→物理映射
 ```
 
 ## 可视化 HTML
@@ -24,6 +25,7 @@
 | [CUDA 线程层次 — Grid → Block → Warp → Thread](visuals/cuda-thread-hierarchy.html) | Grid - Block - Warp - Thread 四级层级 | 讲解线程层次时打开，切换层级查看                  |
 | [Shared Memory Tiling — 矩阵乘法数据流](visuals/shared-memory-tiling.html)         | 矩阵乘法 tiling 数据流，6 步演示      | 讲解 Shared Memory 优化时打开，逐步演示加载和计算 |
 | [CUDA 线程索引到数据的映射](visuals/thread-index-mapping.html)                     | 线程索引到数据的 1D/2D/3D 映射        | 讲解索引计算时打开，切换维度查看映射关系          |
+| [线程层次映射](visuals/cuda-thread-hardware-mapping.html)                           | 软件配置 → 逻辑层次 → 物理硬件 三列对照 | 讲解 Grid/Block/Warp/Thread 与 SM/Warp Scheduler/CUDA Core 的映射 |
 
 ## 教学流程
 

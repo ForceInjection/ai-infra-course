@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CUDA 线程层次 — 软件 → 逻辑 → 物理</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:12px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#F8F6FB; }
+.main-wrap { max-width:1250px; width:100%; margin:0 auto; padding:0 10px 8px; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>CUDA 线程层次映射 — 软件配置 → 逻辑层次 → 物理硬件</h1>
+</div>
+<div class="main-wrap">
+<svg viewBox="0 0 1100 720">
+
+  <rect x="0" y="0" width="1100" height="720" rx="16" fill="#1A0F2E" stroke="#432879" stroke-width="2"/>
+
+  <!-- ====== SECTION 1: 软件配置 ====== -->
+  <rect x="40" y="30" width="1020" height="120" rx="10" fill="#231440" stroke="#E97132" stroke-width="1.5"/>
+  <rect x="40" y="30" width="180" height="26" rx="10" fill="#E97132"/>
+  <rect x="40" y="42" width="180" height="14" fill="#E97132"/>
+  <text x="130" y="49" text-anchor="middle" font-size="12" fill="#FFFFFF" font-weight="bold" font-family="sans-serif">1. 软件配置</text>
+
+  <!-- Kernel launch code -->
+  <text x="550" y="72" text-anchor="middle" font-size="17" fill="#FFFFFF" font-weight="bold" font-family="monospace">kernel&lt;&lt;&lt;gridDim, blockDim&gt;&gt;&gt;()</text>
+
+  <!-- gridDim -->
+  <rect x="120" y="88" width="340" height="48" rx="6" fill="#0E2841" stroke="#156082" stroke-width="1.5"/>
+  <text x="290" y="108" text-anchor="middle" font-size="13" fill="#0F9ED5" font-weight="bold" font-family="monospace">gridDim = (N + blockDim - 1) / blockDim</text>
+  <text x="290" y="128" text-anchor="middle" font-size="10" fill="#F8F6FB" font-family="sans-serif">总共启动多少个 block — 可以任意大, GPU 自动分批调度</text>
+
+  <!-- blockDim -->
+  <rect x="500" y="88" width="440" height="48" rx="6" fill="#231440" stroke="#A02B93" stroke-width="1.5"/>
+  <text x="720" y="108" text-anchor="middle" font-size="13" fill="#A02B93" font-weight="bold" font-family="monospace">blockDim = 256  (通常取 128 / 256 / 512)</text>
+  <text x="720" y="128" text-anchor="middle" font-size="10" fill="#F8F6FB" font-family="sans-serif">每个 block 多少线程 — 必须是 32 的倍数, 上限 1024</text>
+
+  <!-- Down arrow -->
+  <polygon points="550,158 540,168 560,168" fill="#432879"/>
+  <line x1="550" y1="155" x2="550" y2="165" stroke="#432879" stroke-width="1.5"/>
+
+  <!-- ====== SECTION 2: 逻辑层次 ====== -->
+  <rect x="40" y="175" width="1020" height="210" rx="10" fill="#231440" stroke="#156082" stroke-width="1.5"/>
+  <rect x="40" y="175" width="180" height="26" rx="10" fill="#156082"/>
+  <rect x="40" y="187" width="180" height="14" fill="#156082"/>
+  <text x="130" y="194" text-anchor="middle" font-size="12" fill="#FFFFFF" font-weight="bold" font-family="sans-serif">2. 逻辑层次</text>
+
+  <!-- Grid level -->
+  <rect x="70" y="212" width="960" height="36" rx="6" fill="#0E2841" stroke="#0F9ED5" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="90" y="235" text-anchor="start" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Grid (网格)</text>
+  <text x="210" y="235" text-anchor="start" font-size="11" fill="#F8F6FB" font-family="sans-serif">— 全部 block 的集合, 分布在 GPU 所有 SM 上。不同 block 之间不能同步, 不能访问对方 Shared Memory。</text>
+
+  <!-- Block level → show several blocks inside grid -->
+  <rect x="70" y="258" width="200" height="42" rx="5" fill="#231440" stroke="#A02B93" stroke-width="1.5"/>
+  <text x="170" y="278" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Block 0</text>
+  <text x="170" y="294" text-anchor="middle" font-size="9" fill="#F8F6FB" font-family="sans-serif">256 threads, 1 个 SM</text>
+
+  <rect x="280" y="258" width="200" height="42" rx="5" fill="#231440" stroke="#A02B93" stroke-width="1.5"/>
+  <text x="380" y="278" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Block 1</text>
+  <text x="380" y="294" text-anchor="middle" font-size="9" fill="#F8F6FB" font-family="sans-serif">256 threads, 1 个 SM</text>
+
+  <rect x="490" y="258" width="200" height="42" rx="5" fill="#231440" stroke="#A02B93" stroke-width="1.5"/>
+  <text x="590" y="278" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Block 2</text>
+  <text x="590" y="294" text-anchor="middle" font-size="9" fill="#F8F6FB" font-family="sans-serif">256 threads, 1 个 SM</text>
+
+  <text x="840" y="283" text-anchor="middle" font-size="14" fill="#F8F6FB" font-family="sans-serif">... 共 gridDim 个 block</text>
+
+  <!-- Block 0 zoomed: warps + threads -->
+  <text x="90" y="320" text-anchor="start" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Block 0 内部展开:</text>
+
+  <!-- Warps within block -->
+  <rect x="90" y="332" width="116" height="36" rx="4" fill="#0E2841" stroke="#0F9ED5" stroke-width="1"/>
+  <text x="148" y="348" text-anchor="middle" font-size="10" fill="#0F9ED5" font-weight="bold" font-family="sans-serif">Warp 0</text>
+  <text x="148" y="362" text-anchor="middle" font-size="8" fill="#F8F6FB" font-family="sans-serif">Thread 0–31</text>
+
+  <rect x="214" y="332" width="116" height="36" rx="4" fill="#0E2841" stroke="#0F9ED5" stroke-width="1"/>
+  <text x="272" y="348" text-anchor="middle" font-size="10" fill="#0F9ED5" font-weight="bold" font-family="sans-serif">Warp 1</text>
+  <text x="272" y="362" text-anchor="middle" font-size="8" fill="#F8F6FB" font-family="sans-serif">Thread 32–63</text>
+
+  <rect x="338" y="332" width="116" height="36" rx="4" fill="#0E2841" stroke="#0F9ED5" stroke-width="1"/>
+  <text x="396" y="348" text-anchor="middle" font-size="10" fill="#0F9ED5" font-weight="bold" font-family="sans-serif">Warp 2</text>
+  <text x="396" y="362" text-anchor="middle" font-size="8" fill="#F8F6FB" font-family="sans-serif">Thread 64–95</text>
+
+  <text x="600" y="354" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">... ×8 warps = 256 threads</text>
+
+  <text x="90" y="380" text-anchor="start" font-size="10" fill="#F8F6FB" font-family="sans-serif">blockDim = 256 → 256 threads = 8 warps。每 32 线程自动分组为一个 warp, 由 Warp Scheduler 锁步执行 (SIMT)。</text>
+
+  <!-- Down arrow -->
+  <polygon points="550,393 540,403 560,403" fill="#432879"/>
+  <line x1="550" y1="390" x2="550" y2="400" stroke="#432879" stroke-width="1.5"/>
+
+  <!-- ====== SECTION 3: 物理硬件 ====== -->
+  <rect x="40" y="410" width="1020" height="230" rx="10" fill="#231440" stroke="#196B24" stroke-width="1.5"/>
+  <rect x="40" y="410" width="180" height="26" rx="10" fill="#196B24"/>
+  <rect x="40" y="422" width="180" height="14" fill="#196B24"/>
+  <text x="130" y="429" text-anchor="middle" font-size="12" fill="#FFFFFF" font-weight="bold" font-family="sans-serif">3. 物理硬件</text>
+
+  <!-- GPU chip -->
+  <rect x="70" y="448" width="430" height="175" rx="10" fill="#0E2841" stroke="#0F9ED5" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="285" y="470" text-anchor="middle" font-size="13" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">GA102 GPU (RTX 3090) — 82 SM</text>
+
+  <!-- SM rows -->
+  <rect x="90" y="485" width="38" height="22" rx="3" fill="#166534" stroke="#22c55e" stroke-width="0.8"/>
+  <text x="109" y="500" text-anchor="middle" font-size="7" fill="#86efac" font-family="sans-serif">SM0</text>
+  <rect x="134" y="485" width="38" height="22" rx="3" fill="#166534" stroke="#22c55e" stroke-width="0.8"/>
+  <text x="153" y="500" text-anchor="middle" font-size="7" fill="#86efac" font-family="sans-serif">SM1</text>
+  <rect x="178" y="485" width="38" height="22" rx="3" fill="#166534" stroke="#22c55e" stroke-width="0.8"/>
+  <text x="197" y="500" text-anchor="middle" font-size="7" fill="#86efac" font-family="sans-serif">SM2</text>
+  <text x="254" y="500" text-anchor="middle" font-size="9" fill="#F8F6FB" font-family="sans-serif">... ×82 SM</text>
+
+  <!-- SM zoomed -->
+  <rect x="90" y="515" width="390" height="95" rx="6" fill="#052e16" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="285" y="534" text-anchor="middle" font-size="12" fill="#4ade80" font-weight="bold" font-family="sans-serif">SM 内部结构</text>
+
+  <rect x="105" y="546" width="175" height="28" rx="3" fill="#A02B93" stroke="#c084fc" stroke-width="0.8"/>
+  <text x="192" y="564" text-anchor="middle" font-size="9" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Warp Scheduler ×4</text>
+
+  <rect x="105" y="580" width="112" height="22" rx="3" fill="#156082" stroke="#0F9ED5" stroke-width="0.8"/>
+  <text x="161" y="595" text-anchor="middle" font-size="8" fill="#F8F6FB" font-family="sans-serif">CUDA Core ×128</text>
+
+  <rect x="224" y="580" width="92" height="22" rx="3" fill="#78350f" stroke="#f59e0b" stroke-width="0.8"/>
+  <text x="270" y="595" text-anchor="middle" font-size="8" fill="#F8F6FB" font-family="sans-serif">Tensor Core ×4</text>
+
+  <rect x="323" y="580" width="142" height="22" rx="3" fill="#0f1a2e" stroke="#60a5fa" stroke-width="0.8"/>
+  <text x="394" y="595" text-anchor="middle" font-size="8" fill="#93c5fd" font-family="sans-serif">Register / L1 / Shared</text>
+
+  <!-- Right side: mapping text -->
+  <text x="540" y="440" text-anchor="start" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">对应关系</text>
+
+  <!-- Mapping row 1 -->
+  <rect x="540" y="455" width="12" height="12" rx="2" fill="#0F9ED5"/>
+  <text x="560" y="465" text-anchor="start" font-size="12" fill="#F8F6FB" font-family="sans-serif">Grid = 整个 GPU 芯片</text>
+  <text x="560" y="482" text-anchor="start" font-size="10" fill="#F8F6FB" font-family="sans-serif">gridDim 个 block 分布到所有 SM。自动分批 (wave) — block 0~821 先跑, 然后 822~, ...</text>
+
+  <!-- Mapping row 2 -->
+  <rect x="540" y="502" width="12" height="12" rx="2" fill="#A02B93"/>
+  <text x="560" y="512" text-anchor="start" font-size="12" fill="#F8F6FB" font-family="sans-serif">Block = 1 个 SM</text>
+  <text x="560" y="529" text-anchor="start" font-size="10" fill="#F8F6FB" font-family="sans-serif">一个 block 固定在一个 SM 上执行，不跨 SM。block 内线程通过 Shared Memory 通信并同步。</text>
+
+  <!-- Mapping row 3 -->
+  <rect x="540" y="549" width="12" height="12" rx="2" fill="#A02B93"/>
+  <text x="560" y="559" text-anchor="start" font-size="12" fill="#F8F6FB" font-family="sans-serif">Warp = Warp Scheduler 的调度单位</text>
+  <text x="560" y="576" text-anchor="start" font-size="10" fill="#F8F6FB" font-family="sans-serif">每 32 线程 = 1 warp (硬件自动分组)。</text>
+  <text x="560" y="591" text-anchor="start" font-size="10" fill="#F8F6FB" font-family="sans-serif">SM 内 4 个 Warp Scheduler，每周期各发射 1 个 warp → 最多 128 threads/cycle。</text>
+  <text x="560" y="606" text-anchor="start" font-size="10" fill="#F8F6FB" font-family="sans-serif">一个 warp 等内存 (stall ~600 cycles) 时，Scheduler 零开销切到另一个就绪 warp — GPU 靠此隐藏延迟。</text>
+
+  <!-- Mapping row 4 -->
+  <rect x="540" y="621" width="12" height="12" rx="2" fill="#0F9ED5"/>
+  <text x="560" y="631" text-anchor="start" font-size="12" fill="#F8F6FB" font-family="sans-serif">Thread = 1 个 CUDA Core 上的 1 条指令</text>
+
+  <!-- Bottom rules -->
+  <rect x="40" y="648" width="1020" height="65" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <text x="550" y="668" text-anchor="middle" font-size="12" fill="#fbbf24" font-weight="bold" font-family="sans-serif">RTX 3090 (1536 threads/SM):  blockDim=256 → 6 blocks/SM → 100% &nbsp;|&nbsp; blockDim=1024 → 1 block/SM → 67%</text>
+  <text x="550" y="692" text-anchor="middle" font-size="12" fill="#fbbf24" font-weight="bold" font-family="sans-serif">H100 (2048 threads/SM):  blockDim=256 → 8 blocks/SM → 100% &nbsp;|&nbsp; blockDim=1024 → 2 blocks/SM → 100% &nbsp;|&nbsp; blockDim 和 GPU 型号相关, 不是绝对值</text>
+
+</svg>
+</div>
+</body>
+</html>
