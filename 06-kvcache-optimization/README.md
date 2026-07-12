@@ -1,6 +1,6 @@
 # 模块 6：大模型推理加速实践：KV Cache 原理与优化
 
-> 90 分钟 &nbsp;|&nbsp; 45 页 PPT &nbsp;|&nbsp; 2 个显存计算脚本 &nbsp;|&nbsp; 无独立可视化 (图表在 PPT 中呈现)
+> 90 分钟 &nbsp;|&nbsp; 45 页 PPT &nbsp;|&nbsp; 2 个显存计算脚本 &nbsp;|&nbsp; 2 个可视化 HTML
 
 ## 目录结构
 
@@ -18,9 +18,19 @@
     ├── qwen3_06b_config.json        #   Qwen3-0.6B 配置样例
     ├── calculate_deepseek_v4_memory.py  # DeepSeek V4 专用估算 (PPT 第 8 页)
     └── deepseek_v4_pro_config.json      # DeepSeek V4 Pro 配置样例
+└── visuals/                                 # 可视化 HTML (2 个)
+    ├── kv-cache-formula.html                #   KV Cache 公式参数来源图
+    └── kv-cache-tensor.html                 #   KV Cache 三维张量形状 [L, H_kv, D]
 ```
 
 > 显存计算脚本来源: [AI-fundamentals/09_inference_system/memory_calc/](https://github.com/ForceInjection/AI-fundamentals/tree/main/09_inference_system/memory_calc)
+
+## 可视化 HTML
+
+| 可视化                                                                   | 用途                                         | 教学场景                                         |
+| ------------------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------------ |
+| [KV Cache 公式 — 每个参数的物理来源](visuals/kv-cache-formula.html)      | 公式 `2×L×H_kv×D×T×B` 逐参数拆解 + 示例计算  | 讲解 KV Cache 显存公式时打开，逐项理解参数来源      |
+| [KV Cache 三维张量形状](visuals/kv-cache-tensor.html)                    | 一个 token 的 K/V 张量 [L, H_kv, D] + 精度 B  | 讲解张量形状时打开，直观理解 L/H_kv/D/B 如何构成    |
 
 ## 与模块 5 的边界
 

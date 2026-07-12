@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KV Cache 公式 — 每个参数的物理来源</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:12px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#F8F6FB; }
+.main-wrap { max-width:1200px; width:100%; margin:0 auto; padding:0 10px 8px; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>KV Cache 公式 — 每个参数从模型的哪一层来？</h1>
+</div>
+<div class="main-wrap">
+<svg viewBox="0 0 1100 720">
+
+  <rect x="0" y="0" width="1100" height="720" rx="16" fill="#1A0F2E" stroke="#432879" stroke-width="2"/>
+
+  <!-- Formula -->
+  <rect x="100" y="20" width="900" height="52" rx="8" fill="#231440" stroke="#E97132" stroke-width="2"/>
+  <text x="550" y="53" text-anchor="middle" font-size="20" fill="#FFFFFF" font-weight="bold" font-family="monospace">KV Cache = 2 × L × H_kv × D × T × B  (Bytes)</text>
+
+  <!-- Row 1: 2 -->
+  <rect x="60" y="92" width="980" height="62" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <rect x="60" y="92" width="50" height="62" rx="8" fill="#0E2841" stroke="#0F9ED5" stroke-width="1.5"/>
+  <text x="85" y="130" text-anchor="middle" font-size="22" fill="#0F9ED5" font-weight="bold" font-family="monospace">2</text>
+  <text x="130" y="116" text-anchor="start" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Key + Value — 为什么是 2？</text>
+  <text x="130" y="140" text-anchor="start" font-size="11" fill="#F8F6FB" font-family="sans-serif">Attention 计算需要 K 和 V。每次生成新 token，都要把当前 token 的 K 和 V 存起来，供后续所有 token 使用。Q 每次重新算，不缓存。</text>
+
+  <!-- Row 2: L -->
+  <rect x="60" y="164" width="980" height="62" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <rect x="60" y="164" width="50" height="62" rx="8" fill="#0E2841" stroke="#156082" stroke-width="1.5"/>
+  <text x="85" y="202" text-anchor="middle" font-size="22" fill="#156082" font-weight="bold" font-family="monospace">L</text>
+  <text x="130" y="188" text-anchor="start" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">L — 层数 (Qwen2.5-7B: L=28)</text>
+  <text x="130" y="212" text-anchor="start" font-size="11" fill="#F8F6FB" font-family="sans-serif">每层的 Attention 权重不同，第 1 层和第 28 层关注的语义完全不同。因此每层都要存自己的一份 K/V，不能复用。28 层 × 每层一份 = 28 份。</text>
+
+  <!-- Row 3: H_kv -->
+  <rect x="60" y="236" width="980" height="62" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <rect x="60" y="236" width="50" height="62" rx="8" fill="#0E2841" stroke="#A02B93" stroke-width="1.5"/>
+  <text x="85" y="274" text-anchor="middle" font-size="22" fill="#A02B93" font-weight="bold" font-family="monospace">H_kv</text>
+  <text x="130" y="260" text-anchor="start" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H_kv — KV 头数 (Qwen2.5-7B: H_kv=4)</text>
+  <text x="130" y="284" text-anchor="start" font-size="11" fill="#F8F6FB" font-family="sans-serif">Attention 拆成多个"头"独立计算。GQA 让多个 Q 头共享一组 K/V 头来减少缓存。如 Llama-3-70B: 64 Q 头配 8 KV 头，省 8 倍。</text>
+
+  <!-- Row 4: D -->
+  <rect x="60" y="308" width="980" height="62" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <rect x="60" y="308" width="50" height="62" rx="8" fill="#0E2841" stroke="#614F96" stroke-width="1.5"/>
+  <text x="85" y="346" text-anchor="middle" font-size="22" fill="#614F96" font-weight="bold" font-family="monospace">D</text>
+  <text x="130" y="332" text-anchor="start" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">D — 每个 KV 头的向量维度 (Qwen2.5-7B: D=128)</text>
+  <text x="130" y="356" text-anchor="start" font-size="11" fill="#F8F6FB" font-family="sans-serif">每个头产出一个 D 维向量。H_kv 个头组成 [H_kv × D] 矩阵——这就是每层每个 token 的 K(或 V) 的"形状"。D 由模型设计决定，通常 64~256。</text>
+
+  <!-- Row 5: T -->
+  <rect x="60" y="380" width="980" height="62" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <rect x="60" y="380" width="50" height="62" rx="8" fill="#0E2841" stroke="#E97132" stroke-width="1.5"/>
+  <text x="85" y="418" text-anchor="middle" font-size="22" fill="#E97132" font-weight="bold" font-family="monospace">T</text>
+  <text x="130" y="404" text-anchor="start" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">T — 序列长度 (prompt + 已生成的 tokens)</text>
+  <text x="130" y="428" text-anchor="start" font-size="11" fill="#F8F6FB" font-family="sans-serif">自回归生成：每生成 1 个新 token，它的 K/V 追加到 Cache 末尾 → Cache 大小随 T 线性增长。这是瓶颈。</text>
+
+  <!-- Row 6: B -->
+  <rect x="60" y="452" width="980" height="62" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <rect x="60" y="452" width="50" height="62" rx="8" fill="#0E2841" stroke="#196B24" stroke-width="1.5"/>
+  <text x="85" y="490" text-anchor="middle" font-size="22" fill="#196B24" font-weight="bold" font-family="monospace">B</text>
+  <text x="130" y="476" text-anchor="start" font-size="14" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">B — 每个元素的字节数 (FP16=2, FP8=1, INT8=1, INT4=0.5)</text>
+  <text x="130" y="500" text-anchor="start" font-size="11" fill="#F8F6FB" font-family="sans-serif">数据精度决定每个数值占多少字节。量化 (FP16→FP8) 直接让 Cache 减半。</text>
+
+  <!-- Example -->
+  <rect x="60" y="534" width="980" height="100" rx="10" fill="#231440" stroke="#E97132" stroke-width="1.5"/>
+  <text x="550" y="562" text-anchor="middle" font-size="14" fill="#E97132" font-weight="bold" font-family="sans-serif">示例: Qwen2.5-7B (L=28, H_kv=4, D=128), T=2048 tokens, B=2 (FP16)</text>
+  <text x="550" y="594" text-anchor="middle" font-size="13" fill="#F8F6FB" font-family="monospace">= 2 × L × H_kv × D × T × B = 2 × 28 × 4 × 128 × 2048 × 2</text>
+  <text x="550" y="618" text-anchor="middle" font-size="14" fill="#fbbf24" font-weight="bold" font-family="monospace">= 117,440,512 Bytes ≈ 112 MiB</text>
+
+  <!-- Bottom notes -->
+  <rect x="60" y="654" width="980" height="52" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <text x="550" y="674" text-anchor="middle" font-size="12" fill="#fbbf24" font-weight="bold" font-family="sans-serif">适用范围: MHA / GQA / MQA 等稠密注意力架构 (Llama, Qwen2.5, Mistral 等)</text>
+  <text x="550" y="694" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">注意: MLA (DeepSeek V2/V3) 将 K/V 压缩为 latent vector 再缓存，公式不同；MoE 模型的 KV Cache 不受 Expert 数量影响。并发 × N。</text>
+
+</svg>
+</div>
+</body>
+</html>

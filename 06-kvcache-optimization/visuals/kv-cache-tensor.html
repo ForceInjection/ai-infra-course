@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KV Cache 张量形状 — [L, H_kv, D]</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:12px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.3em; color:#F8F6FB; }
+.main-wrap { max-width:1200px; width:100%; margin:0 auto; padding:0 10px 8px; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>KV Cache 三维张量 — 一个 Token 的 K（或 V）长什么样？</h1>
+</div>
+<div class="main-wrap">
+<svg viewBox="0 0 1100 680">
+
+  <rect x="0" y="0" width="1100" height="680" rx="16" fill="#1A0F2E" stroke="#432879" stroke-width="2"/>
+
+  <text x="550" y="30" text-anchor="middle" font-size="16" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">一个 Token 的 K（或 V）长什么样？— [L × H_kv × D] 三维张量</text>
+
+  <!-- Back layers as fading silhouettes -->
+  <polygon points="340,170 740,170 740,350 340,350" fill="#0E2841" stroke="#156082" stroke-width="0.5" opacity="0.06"/>
+  <polygon points="335,173 735,173 735,353 335,353" fill="#0E2841" stroke="#156082" stroke-width="0.5" opacity="0.08"/>
+  <polygon points="330,176 730,176 730,356 330,356" fill="#0E2841" stroke="#156082" stroke-width="0.5" opacity="0.10"/>
+  <polygon points="325,179 725,179 725,359 325,359" fill="#0E2841" stroke="#156082" stroke-width="0.5" opacity="0.12"/>
+  <polygon points="320,182 720,182 720,362 320,362" fill="#0E2841" stroke="#156082" stroke-width="0.5" opacity="0.14"/>
+  <polygon points="315,185 715,185 715,365 315,365" fill="#0E2841" stroke="#156082" stroke-width="0.5" opacity="0.16"/>
+  <polygon points="310,188 710,188 710,368 310,368" fill="#0E2841" stroke="#156082" stroke-width="0.5" opacity="0.18"/>
+  <text x="290" y="248" text-anchor="end" font-size="12" fill="#156082" font-weight="bold" font-family="sans-serif">L = 28 层</text>
+  <line x1="295" y1="244" x2="335" y2="222" stroke="#156082" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="335,222 329,228 337,231" fill="#156082"/>
+
+  <polygon points="340,170 310,188 310,368 340,350" fill="#0E2841" stroke="#156082" stroke-width="0.5" opacity="0.12"/>
+  <polygon points="340,170 310,188 710,188 740,170" fill="#0E2841" stroke="#156082" stroke-width="0.5" opacity="0.12"/>
+
+  <!-- FRONT MATRIX: 4 rows (H_kv) × 16 cols (simplified D) -->
+  <rect x="340" y="170" width="400" height="180" rx="2" fill="#0E2841" stroke="#0F9ED5" stroke-width="2"/>
+
+  <!-- Row labels (right side) -->
+  <text x="750" y="198" text-anchor="start" font-size="10" fill="#A02B93" font-family="sans-serif">head 0</text>
+  <text x="750" y="243" text-anchor="start" font-size="10" fill="#A02B93" font-family="sans-serif">head 1</text>
+  <text x="750" y="288" text-anchor="start" font-size="10" fill="#A02B93" font-family="sans-serif">head 2</text>
+  <text x="750" y="333" text-anchor="start" font-size="10" fill="#A02B93" font-family="sans-serif">head 3</text>
+  <text x="850" y="260" text-anchor="start" font-size="12" fill="#A02B93" font-weight="bold" font-family="sans-serif">H_kv=4</text>
+
+  <!-- Row 0 -->
+  <rect x="343" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="368" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="393" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="418" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="443" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="468" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="493" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="518" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="543" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="568" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="593" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="618" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="643" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="668" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="693" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="718" y="174" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+
+  <!-- Row 1 -->
+  <rect x="343" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="368" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="393" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="418" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="443" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="468" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="493" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="518" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="543" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="568" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="593" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="618" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="643" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="668" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="693" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="718" y="217" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+
+  <!-- Row 2 -->
+  <rect x="343" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="368" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="393" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="418" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="443" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="468" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="493" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="518" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="543" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="568" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="593" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="618" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="643" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="668" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="693" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="718" y="260" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+
+  <!-- Row 3 -->
+  <rect x="343" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="368" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="393" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="418" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="443" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="468" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="493" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="518" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="543" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="568" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="593" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="618" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="643" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="668" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="693" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+  <rect x="718" y="303" width="22" height="38" rx="2" fill="#156082" stroke="#0F9ED5" stroke-width="0.5"/>
+
+  <!-- D label -->
+  <text x="540" y="365" text-anchor="middle" font-size="13" fill="#0F9ED5" font-weight="bold" font-family="sans-serif">D = 128  (简化显示 16 格)</text>
+
+  <!-- Highlight one cell -->
+  <rect x="543" y="260" width="22" height="38" rx="2" fill="#fbbf24" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="554" y="284" text-anchor="middle" font-size="8" fill="#1A0F2E" font-weight="bold" font-family="sans-serif">0.3</text>
+
+  <!-- Annotation from highlighted cell -->
+  <line x1="554" y1="298" x2="554" y2="415" stroke="#fbbf24" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="440" y="422" width="228" height="28" rx="6" fill="#231440" stroke="#fbbf24" stroke-width="1"/>
+  <text x="554" y="440" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">每个格子 = 1 个 FP16 值 = 2 bytes</text>
+
+  <!-- ===== TOTAL at bottom ===== -->
+  <rect x="80" y="480" width="940" height="155" rx="10" fill="#231440" stroke="#E97132" stroke-width="1.5"/>
+  <text x="550" y="510" text-anchor="middle" font-size="14" fill="#E97132" font-weight="bold" font-family="sans-serif">汇总: 一个 Token 的 K（或 V）占多少显存？</text>
+
+  <text x="140" y="545" text-anchor="start" font-size="13" fill="#F8F6FB" font-family="monospace">前面矩阵 (1 层):  H_kv × D × B</text>
+  <text x="520" y="545" text-anchor="start" font-size="13" fill="#8A7BB5" font-family="monospace">= 4 × 128 × 2 = 1,024 Bytes</text>
+
+  <text x="140" y="570" text-anchor="start" font-size="13" fill="#F8F6FB" font-family="monospace">L 层 (28 层):  L × H_kv × D × B</text>
+  <text x="520" y="570" text-anchor="start" font-size="13" fill="#8A7BB5" font-family="monospace">= 28 × 4 × 128 × 2 = 28,672 Bytes ≈ 28 KiB</text>
+
+  <text x="140" y="595" text-anchor="start" font-size="13" fill="#F8F6FB" font-family="monospace">K+V 两份:       2 × L × H_kv × D × B</text>
+  <text x="520" y="595" text-anchor="start" font-size="13" fill="#8A7BB5" font-family="monospace">= 57,344 Bytes ≈ 56 KiB</text>
+
+  <text x="140" y="620" text-anchor="start" font-size="13" fill="#fbbf24" font-weight="bold" font-family="monospace">T=2048 tokens:  T × 56 KiB</text>
+  <text x="520" y="620" text-anchor="start" font-size="14" fill="#fbbf24" font-weight="bold" font-family="monospace">≈ 112 MiB</text>
+
+</svg>
+</div>
+</body>
+</html>
