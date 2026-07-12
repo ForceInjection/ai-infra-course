@@ -18,9 +18,9 @@ svg { max-width:100%; max-height:100%; }
   <h1>常见精度 — 每个数值占多少 Bytes？</h1>
 </div>
 <div class="main-wrap">
-<svg viewBox="0 0 1100 620">
+<svg viewBox="0 0 1100 640">
 
-  <rect x="0" y="0" width="1100" height="620" rx="16" fill="#1A0F2E" stroke="#432879" stroke-width="2"/>
+  <rect x="0" y="0" width="1100" height="640" rx="16" fill="#1A0F2E" stroke="#432879" stroke-width="2"/>
 
   <!-- Bit layout legend -->
   <text x="550" y="30" text-anchor="middle" font-size="12" fill="#F8F6FB" font-family="sans-serif">■ <tspan fill="#fbbf24">S</tspan> = 符号位 &nbsp;|&nbsp; ■ <tspan fill="#0F9ED5">E</tspan> = 指数位 (决定数值范围) &nbsp;|&nbsp; ■ <tspan fill="#4ade80">M</tspan> = 尾数位 (决定精度)</text>
@@ -98,71 +98,72 @@ svg { max-width:100%; max-height:100%; }
   <text x="970" y="228" text-anchor="middle" font-size="8" fill="#F8F6FB" font-family="sans-serif">INT (4)</text>
 
   <!-- ===== FORMULA EXPLANATION ===== -->
-  <rect x="60" y="280" width="980" height="42" rx="8" fill="#231440" stroke="#fbbf24" stroke-width="1.5"/>
+  <rect x="60" y="280" width="980" height="56" rx="8" fill="#231440" stroke="#fbbf24" stroke-width="1.5"/>
 
   <!-- Left: float -->
-  <text x="285" y="303" text-anchor="middle" font-size="11" fill="#E97132" font-weight="bold" font-family="sans-serif">浮点数</text>
-  <text x="285" y="318" text-anchor="middle" font-size="12" fill="#F8F6FB" font-family="monospace">value = (<tspan fill="#fbbf24">−1</tspan>)<tspan font-size="8" dy="-3">S</tspan><tspan font-size="12" dy="3"> × 2</tspan><tspan font-size="8" dy="-3">(E−bias)</tspan><tspan font-size="12" dy="3"> × 1.</tspan><tspan fill="#4ade80" font-size="8" dy="-3">M</tspan></text>
+  <text x="285" y="301" text-anchor="middle" font-size="11" fill="#E97132" font-weight="bold" font-family="sans-serif">浮点数</text>
+  <text x="285" y="316" text-anchor="middle" font-size="12" fill="#F8F6FB" font-family="monospace">value = (<tspan fill="#fbbf24">−1</tspan>)<tspan font-size="8" dy="-3">S</tspan><tspan font-size="12" dy="3"> × 2</tspan><tspan font-size="8" dy="-3">(E−bias)</tspan><tspan font-size="12" dy="3"> × 1.</tspan><tspan fill="#4ade80" font-size="8" dy="-3">M</tspan></text>
+  <text x="285" y="330" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">1.M 的 "1" 是隐含前导位 (隐藏位)，实际有效数字 = 1 + M 的二进制小数部分</text>
 
   <!-- Divider -->
-  <line x1="530" y1="285" x2="530" y2="317" stroke="#432879" stroke-width="1"/>
+  <line x1="530" y1="285" x2="530" y2="331" stroke="#432879" stroke-width="1"/>
 
   <!-- Right: integer -->
-  <text x="780" y="303" text-anchor="middle" font-size="11" fill="#A02B93" font-weight="bold" font-family="sans-serif">整数</text>
-  <text x="780" y="318" text-anchor="middle" font-size="12" fill="#F8F6FB" font-family="monospace">value = (int_val − zero_point) × scale</text>
+  <text x="780" y="301" text-anchor="middle" font-size="11" fill="#A02B93" font-weight="bold" font-family="sans-serif">整数</text>
+  <text x="780" y="316" text-anchor="middle" font-size="12" fill="#F8F6FB" font-family="monospace">value = (int_val − zero_point) × scale</text>
 
   <!-- ===== COMPARISON TABLE ===== -->
-  <rect x="60" y="335" width="980" height="195" rx="10" fill="#231440" stroke="#432879" stroke-width="1.5"/>
-  <text x="550" y="361" text-anchor="middle" font-size="13" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">精度对 KV Cache 的影响 (Qwen2.5-7B, T=2048, L=28, H_kv=4, D=128)</text>
+  <rect x="60" y="350" width="980" height="195" rx="10" fill="#231440" stroke="#432879" stroke-width="1.5"/>
+  <text x="550" y="376" text-anchor="middle" font-size="13" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">精度对 KV Cache 的影响 (Qwen2.5-7B, T=2048, L=28, H_kv=4, D=128)</text>
 
-  <rect x="90" y="382" width="920" height="26" rx="4" fill="#0E2841"/>
-  <text x="150" y="399" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">精度</text>
-  <text x="300" y="399" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Bytes/元素</text>
-  <text x="460" y="399" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">单 token KV</text>
-  <text x="620" y="399" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">T=2048 总 KV</text>
-  <text x="780" y="399" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">vs FP16 节省</text>
-  <text x="900" y="399" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">HW 支持</text>
+  <rect x="90" y="397" width="920" height="26" rx="4" fill="#0E2841"/>
+  <text x="150" y="414" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">精度</text>
+  <text x="300" y="414" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Bytes/元素</text>
+  <text x="460" y="414" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">单 token KV</text>
+  <text x="620" y="414" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">T=2048 总 KV</text>
+  <text x="780" y="414" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">vs FP16 节省</text>
+  <text x="900" y="414" text-anchor="middle" font-size="11" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">HW 支持</text>
 
   <!-- FP16 row -->
-  <rect x="90" y="412" width="920" height="24" rx="4" fill="#231440" stroke="#0F9ED5" stroke-width="1"/>
-  <text x="150" y="428" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">FP16 / BF16</text>
-  <text x="300" y="428" text-anchor="middle" font-size="13" fill="#0F9ED5" font-weight="bold" font-family="monospace">2</text>
-  <text x="460" y="428" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">56 KiB</text>
-  <text x="620" y="428" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">112 MiB</text>
-  <text x="780" y="428" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">基准</text>
-  <text x="900" y="428" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">全系列 GPU</text>
+  <rect x="90" y="427" width="920" height="24" rx="4" fill="#231440" stroke="#0F9ED5" stroke-width="1"/>
+  <text x="150" y="443" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">FP16 / BF16</text>
+  <text x="300" y="443" text-anchor="middle" font-size="13" fill="#0F9ED5" font-weight="bold" font-family="monospace">2</text>
+  <text x="460" y="443" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">56 KiB</text>
+  <text x="620" y="443" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">112 MiB</text>
+  <text x="780" y="443" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">基准</text>
+  <text x="900" y="443" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">全系列 GPU</text>
 
   <!-- FP8 row -->
-  <rect x="90" y="440" width="920" height="24" rx="4" fill="#231440" stroke="#E97132" stroke-width="1"/>
-  <text x="150" y="456" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">FP8 (E4M3)</text>
-  <text x="300" y="456" text-anchor="middle" font-size="13" fill="#E97132" font-weight="bold" font-family="monospace">1</text>
-  <text x="460" y="456" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">28 KiB</text>
-  <text x="620" y="456" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">56 MiB</text>
-  <text x="780" y="456" text-anchor="middle" font-size="11" fill="#4ade80" font-family="sans-serif">↓ 50%</text>
-  <text x="900" y="456" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">H100/H200+</text>
+  <rect x="90" y="455" width="920" height="24" rx="4" fill="#231440" stroke="#E97132" stroke-width="1"/>
+  <text x="150" y="471" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">FP8 (E4M3)</text>
+  <text x="300" y="471" text-anchor="middle" font-size="13" fill="#E97132" font-weight="bold" font-family="monospace">1</text>
+  <text x="460" y="471" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">28 KiB</text>
+  <text x="620" y="471" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">56 MiB</text>
+  <text x="780" y="471" text-anchor="middle" font-size="11" fill="#4ade80" font-family="sans-serif">↓ 50%</text>
+  <text x="900" y="471" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">H100/H200+</text>
 
   <!-- INT8 row -->
-  <rect x="90" y="468" width="920" height="24" rx="4" fill="#231440" stroke="#A02B93" stroke-width="1"/>
-  <text x="150" y="484" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">INT8</text>
-  <text x="300" y="484" text-anchor="middle" font-size="13" fill="#A02B93" font-weight="bold" font-family="monospace">1</text>
-  <text x="460" y="484" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">28 KiB</text>
-  <text x="620" y="484" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">56 MiB</text>
-  <text x="780" y="484" text-anchor="middle" font-size="11" fill="#4ade80" font-family="sans-serif">↓ 50%</text>
-  <text x="900" y="484" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">全系列 GPU</text>
+  <rect x="90" y="483" width="920" height="24" rx="4" fill="#231440" stroke="#A02B93" stroke-width="1"/>
+  <text x="150" y="499" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">INT8</text>
+  <text x="300" y="499" text-anchor="middle" font-size="13" fill="#A02B93" font-weight="bold" font-family="monospace">1</text>
+  <text x="460" y="499" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">28 KiB</text>
+  <text x="620" y="499" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">56 MiB</text>
+  <text x="780" y="499" text-anchor="middle" font-size="11" fill="#4ade80" font-family="sans-serif">↓ 50%</text>
+  <text x="900" y="499" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">全系列 GPU</text>
 
   <!-- INT4 row -->
-  <rect x="90" y="496" width="920" height="24" rx="4" fill="#231440" stroke="#196B24" stroke-width="1"/>
-  <text x="150" y="512" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">INT4</text>
-  <text x="300" y="512" text-anchor="middle" font-size="13" fill="#4ade80" font-weight="bold" font-family="monospace">0.5</text>
-  <text x="460" y="512" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">14 KiB</text>
-  <text x="620" y="512" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">28 MiB</text>
-  <text x="780" y="512" text-anchor="middle" font-size="11" fill="#4ade80" font-family="sans-serif">↓ 75%</text>
-  <text x="900" y="512" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">B200+</text>
+  <rect x="90" y="511" width="920" height="24" rx="4" fill="#231440" stroke="#196B24" stroke-width="1"/>
+  <text x="150" y="527" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="sans-serif">INT4</text>
+  <text x="300" y="527" text-anchor="middle" font-size="13" fill="#4ade80" font-weight="bold" font-family="monospace">0.5</text>
+  <text x="460" y="527" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">14 KiB</text>
+  <text x="620" y="527" text-anchor="middle" font-size="11" fill="#F8F6FB" font-family="monospace">28 MiB</text>
+  <text x="780" y="527" text-anchor="middle" font-size="11" fill="#4ade80" font-family="sans-serif">↓ 75%</text>
+  <text x="900" y="527" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">B200+</text>
 
   <!-- Bottom note -->
-  <rect x="60" y="550" width="980" height="60" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
-  <text x="550" y="574" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">KV Cache 存的是 Attention 的中间结果，对精度不敏感。FP8 几乎无损 (&lt; 0.1% 困惑度上升)，INT4 per-channel 也在 1% 以内。</text>
-  <text x="550" y="596" text-anchor="middle" font-size="11" fill="#fbbf24" font-family="sans-serif">所以 B 是最容易优化的参数 — 改一行配置 (kv-cache-dtype: fp8)，显存直接减半。</text>
+  <rect x="60" y="565" width="980" height="60" rx="8" fill="#231440" stroke="#432879" stroke-width="1"/>
+  <text x="550" y="589" text-anchor="middle" font-size="11" fill="#8A7BB5" font-family="sans-serif">KV Cache 存的是 Attention 的中间结果，对精度不敏感。FP8 几乎无损 (&lt; 0.1% 困惑度上升)，INT4 per-channel 也在 1% 以内。</text>
+  <text x="550" y="611" text-anchor="middle" font-size="11" fill="#fbbf24" font-family="sans-serif">所以 B 是最容易优化的参数 — 改一行配置 (kv-cache-dtype: fp8)，显存直接减半。</text>
 
 </svg>
 </div>
