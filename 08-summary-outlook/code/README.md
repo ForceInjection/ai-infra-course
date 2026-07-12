@@ -7,11 +7,10 @@
 ```text
 code/
 ├── README.md
-├── gpu-container-hook/    # 方向 A: 容器+拦截 (3 files + README)
+├── gpu-hook/              # 方向 A: GPU 资源拦截 (2 files + README)
 │   ├── README.md
 │   ├── cuda_hook.c
-│   ├── Makefile
-│   └── Dockerfile
+│   └── Makefile
 ├── k8s-gateway/           # 方向 B: K8s 调度 (6 files + README)
 │   ├── README.md
 │   ├── app.py

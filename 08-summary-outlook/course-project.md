@@ -4,19 +4,20 @@
 
 从以下三个方向中**任选一个**完成大作业。每个方向都聚焦 **AI 基础设施** (而非 AI 应用)，覆盖课程的多个核心模块。
 
-> **实验环境**: 课程结束后一周内提供包含 GPU 服务器和 K8s 集群的实验环境，用于方向 A (Docker + CUDA hook) 和方向 B (K8s 调度 + vLLM 推理)。方向 C 零硬件依赖，纯 Python 标准库即可完成。
+> **实验环境**: 课程结束后一周内提供包含 GPU 服务器和 K8s 集群的实验环境，用于方向 A (LD_PRELOAD CUDA hook) 和方向 B (K8s 调度 + vLLM 推理)。方向 C 零硬件依赖，纯 Python 标准库即可完成。
 >
 > **骨架代码**: 每个方向在 `code/` 目录下提供了可运行的骨架框架，关键位置标注 `# TODO:`。搜索 `TODO` 即可找到需要完成的代码位置。详见 `code/README.md`。
 
 ### 1.1 截止时间
 
-课程结束后两周
+2026年7月31日
 
 ### 1.2 提交要求
 
 1. **代码**: GitHub 仓库 (或 zip 包)，含 README (如何运行、环境要求、预期结果)
 2. **技术报告**: Markdown/PDF, 3000-5000 字，包含架构图、关键设计决策、实验数据和分析。使用 `code/REPORT_TEMPLATE.md` 模板
 3. 打包提交，命名为 `学号_姓名_大作业.zip`
+4. 提交地址：<wang.tianqing.cn@outlook.com>
 
 ### 1.3 评分标准
 
@@ -29,58 +30,75 @@
 
 ---
 
-## 二、方向 A: 容器化 GPU 推理服务 — 从隔离到拦截
+## 二、方向 A: GPU 资源拦截 — 从显存到算力
 
-**难度**: ★★★☆ (中等) &nbsp;|&nbsp; **覆盖模块**: 1, 3, 5 &nbsp;|&nbsp; **估计代码量**: ~300 行 (Dockerfile ~20 + C ~100 + Python ~150)
+**难度**: ★★★☆ (中等) &nbsp;|&nbsp; **覆盖模块**: 3 &nbsp;|&nbsp; **估计代码量**: ~250 行 (C ~200 + Python ~50)
 
-> **难度说明**: Dockerfile 部分较简单 (模块 1 已实践)；LD_PRELOAD CUDA hook 是核心挑战，但 `cudaMalloc` 的拦截模式与模块 3 的 malloc 完全相同 (编译命令也相同: `gcc -shared -fPIC -ldl`)，主要工作是理解 CUDA Runtime API 的返回值和配额逻辑；nano-vllm 集成有模块 5 的 tracing 脚本可直接参考。
+> **难度说明**: 核心挑战是 LD_PRELOAD 拦截两个 CUDA API。但 `cudaMalloc` 的拦截模式与模块 3 `01_mymalloc.c` 完全相同 (`dlsym` + `__thread` + 配额)，`cudaLaunchKernel` 的令牌桶逻辑与模块 3 `03_token_bucket.py` 完全对应——两样课上都已经手写过，大作业只是把它们搬到 CUDA Runtime API 上。骨架代码已提供完整的函数框架（递归守卫 + 变量声明），学生只需填充配额检查和转发逻辑。
 
 ### 2.1 目标
 
-从零构建一个 GPU 推理容器，深入理解容器隔离机制和 GPU 虚拟化原理。通过 LD_PRELOAD 拦截 CUDA 调用，验证 GPU 资源隔离的有效性。
+使用 LD_PRELOAD 拦截 CUDA Runtime API，实现对单个进程的**显存配额**和**算力限速**——这正是 HAMi `libvgpu.so` 的核心原理。提供一个统一的 CUDA 测试程序 (`test_hook.cu`) 验证拦截效果，无需运行推理框架。
 
 ### 2.2 要求
 
-#### 2.2.1 容器化推理环境 (模块 1)
+#### 2.2.1 显存拦截: `cudaMalloc` (模块 3 — malloc hook 模式)
 
-- 编写 Dockerfile，构建一个包含 CUDA Runtime + nano-vllm (或 vLLM) 的推理镜像
-- 理解并验证 `docker run --gpus all` 背后 NVIDIA Container Toolkit 的设备注入过程:
-  - 容器内 `/dev/nvidia*` 设备文件从何而来？
-  - `libcuda.so` 等驱动库如何挂载进容器？
-  - `nvidia-smi` 在容器内为何能看到 GPU？
-- 对比宿主机和容器内的 GPU 可见性 (设备文件、驱动版本、显存容量)
-- 可选: 使用 `strace` 追踪 `docker run --gpus all` 的完整系统调用序列
-
-#### 2.2.2 LD_PRELOAD CUDA 拦截 (模块 3)
-
-- 编写一个 `libcuda_hook.so`，使用 LD_PRELOAD 拦截 CUDA Runtime API:
-  - **必做**: `cudaMalloc` — 记录每次显存分配 (大小、指针地址)，实现显存配额管理 (通过环境变量 `CUDA_MEM_QUOTA_MB` 设置配额，超配额时返回 `cudaErrorMemoryAllocation`)
-  - **选做**: `cudaFree` — 记录释放，跟踪当前已分配总量
+- 编写 `libcuda_hook.so`，使用 LD_PRELOAD 拦截 `cudaMalloc`:
+  - 通过环境变量 `CUDA_MEM_QUOTA_MB` 设置显存配额
+  - 超配额时返回 `cudaErrorMemoryAllocation` (值为 2)，不调用真正的 `cudaMalloc`
+  - 记录每次分配: 请求大小、返回指针、当前已分配总量
 - 使用 `dlsym(RTLD_NEXT, ...)` 获取原始函数指针并转发调用
-- 编译: `gcc -shared -fPIC -o libcuda_hook.so cuda_hook.c -ldl` (无需链接 CUDA 库，符号由目标进程提供)
-- **关键提示**: 参考模块 3 `code/01_mymalloc.c` 的 `__thread` 递归守卫模式；`printf` 内部可能调用 `malloc` → Hook 内避免使用可能触发自身拦截的函数
-- 验证: 在 nano-vllm 启动前 `LD_PRELOAD=./libcuda_hook.so python example.py`，观察日志输出和配额生效
+- `__thread` 递归守卫: `fprintf(stderr, ...)` 内部可能触发 `cudaMalloc`，必须防止死循环（与模块 3 `01_mymalloc.c` 完全相同的模式）
+- 编译: `gcc -shared -fPIC -o libcuda_hook.so cuda_hook.c -ldl`（无需链接 CUDA 库，符号由目标进程提供）
 
-#### 2.2.3 nano-vllm 集成与分析 (模块 5)
+#### 2.2.2 算力拦截: `cudaLaunchKernel` (模块 3 — 令牌桶模式)
 
-- 在容器内运行 nano-vllm (或 vLLM) 的 `example.py`
-- 使用 LD_PRELOAD hook 记录 nano-vllm 运行期间的 CUDA API 调用统计:
-  - 总共分配了多少次显存？每次多大？
-  - 总共启动了多少次 Kernel？Grid/Block 维度分布如何？
-  - 显存峰值是多少？和模块 6 的理论公式计算结果是否一致？
-- 可选: 对比有无配额限制时 nano-vllm 的行为差异
+- 在同一个 `libcuda_hook.so` 中拦截 `cudaLaunchKernel`:
+  - 用环境变量 `CUDA_CORE_RATE` (每秒可启动的 kernel 数) 和 `CUDA_CORE_CAPACITY` (最大突发数) 配置令牌桶
+  - 每次 kernel 启动消耗 1 个令牌，无令牌时返回 `cudaErrorLaunchFailure` (值为 4) 或阻塞等待
+  - 记录每次 kernel 启动: Grid 维度 (`gridDim.x/y/z`)、Block 维度 (`blockDim.x/y/z`)
+- 令牌桶逻辑直接翻译模块 3 `03_token_bucket.py` 的 `TokenBucket.acquire()`: `_refill()` → 检查 tokens → 扣减或拒绝
+- `_refill()` 用 `clock_gettime(CLOCK_MONOTONIC, ...)` 获取高精度时间（骨架代码已提供 `launch_refill()` 函数）
+- `cudaLaunchKernel` 的所有参数（`func`, `gridDim`, `blockDim`, `args`, `sharedMem`, `stream`）需原样转发给 `real_cudaLaunchKernel`
+
+#### 2.2.3 测试程序验证
+
+- 使用骨架提供的 `test_hook.cu`（无需修改）验证拦截效果:
+
+  ```bash
+  # 编译 hook 和测试程序
+  make && make test-gpu
+
+  # 或手动 (注意 --cudart=shared 是必需的):
+  nvcc --cudart=shared test_hook.cu -o test_hook
+  LD_PRELOAD=./libcuda_hook.so \
+    CUDA_MEM_QUOTA_MB=128 \
+    CUDA_CORE_RATE=5 \
+    CUDA_CORE_CAPACITY=3 \
+    ./test_hook
+  ```
+
+- 测试程序包含 3 个独立测试:
+  - **Test 1**: `cudaMalloc` 配额 — 正常分配成功 + 超配额返回 `cudaErrorMemoryAllocation` (2)
+  - **Test 2**: `cudaLaunchKernel` 限速 — 连续启动 10 个 kernel，前几个通过 (burst)，后续被拒绝；等待 1.5s refill 后恢复
+  - **Test 3**: Grid/Block 维度记录 — 启动不同维度的 kernel，验证 hook 日志输出正确
+- 同时对比: 不加 LD_PRELOAD 跑一次 vs 加 hook 跑一次，观察 stderr 输出的差异
 
 #### 2.2.4 实验与分析
 
-- 绘制: nano-vllm 运行期间的显存分配时间线 (哪些阶段分配最多？)
-- 分析: LD_PRELOAD 拦截的额外开销 (每次 `cudaMalloc` 增加了多少延迟？)
-- 总结: 容器 + LD_PRELOAD 能否实现有效的 GPU 资源隔离？相比于 MIG/Time-Slicing/HAMi 的优劣势是什么？
+- 解析 `test_hook` 运行产生的 hook 日志，绘制:
+  - `cudaMalloc` 分配时间线（x=调用序号，y=分配大小）
+  - `cudaLaunchKernel` 通过/拒绝时间线（对比 burst 耗尽 → refill 恢复的令牌数变化）
+- 用简单的 Python 脚本解析 stderr 日志（骨架不提供，培养学生自己写分析工具的能力）:
+  - 统计总共拦截了多少次 `cudaMalloc` / `cudaLaunchKernel`
+  - 计算拦截开销: hook 中 `fprintf` + `clock_gettime` 的额外延迟（可通过对比有无 hook 时的 wall-clock 时间估算）
+- 总结: LD_PRELOAD 能否实现有效的 GPU 资源隔离？显存配额 + 算力限速的组合与 HAMi 的方案有何异同？相比 MIG/Time-Slicing 的优劣势？
 
 ### 2.3 交付物
 
-- `cuda_hook.c` + `Makefile`: LD_PRELOAD hook 源码 + 编译脚本 (基于骨架 `gpu-container-hook/`)
-- `Dockerfile`: GPU 推理容器镜像
-- `experiments/`: 实验数据目录，含 strace 日志、CUDA API 调用统计 (CSV 或文本)、显存分配时间线图表 (PNG)
+- `cuda_hook.c` + `Makefile`: LD_PRELOAD hook 源码 + 编译脚本（基于骨架 `gpu-hook/`）
+- `experiments/`: 实验数据目录，含 hook 日志 (文本)、CUDA API 调用统计 (CSV)、显存 + kernel 时间线图表 (PNG)
 - `REPORT.md`: 技术报告
 
 ---
@@ -214,7 +232,7 @@
 ## 五、参考资料
 
 - 模块 1: `01-linux-containers/code/` (Namespace/Cgroup/OverlayFS 演示脚本)
-- 模块 3: `03-gpu-virtualization/code/01_mymalloc.c` (LD_PRELOAD malloc hook)
+- 模块 3: `03-gpu-virtualization/code/01_mymalloc.c` (LD_PRELOAD malloc hook) + `03_token_bucket.py` (令牌桶限流)
 - 模块 4: `04-kubernetes-gpu/visuals/k8s-gpu-flow.html` (GPU 调度全链路)
 - 模块 5: `05-vllm-inference/code/trace_nanovllm.py` (nano-vllm 追踪脚本)
 - 模块 6: `06-kvcache-optimization/code/calculate_qwen3_memory.py` (显存计算脚本)
