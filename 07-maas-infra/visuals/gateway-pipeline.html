@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 网关 — 请求处理流水线</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:12px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.2em; color:#F8F6FB; }
+.header .sub { font-size:0.7em; color:#8A7BB5; margin-top:2px; }
+.content { flex:1; min-height:0; display:flex; gap:10px; padding:0 16px 12px; max-width:1200px; width:100%; margin:0 auto; }
+.panel { flex:1; display:flex; flex-direction:column; gap:10px; min-width:0; }
+.box { background:#231440; border:1px solid #432879; border-radius:10px; padding:14px; }
+.box h3 { font-size:0.85em; color:#8A7BB5; margin-bottom:8px; }
+.controls { display:flex; gap:8px; flex-wrap:wrap; }
+.controls button { padding:8px 16px; border:none; border-radius:6px; font-size:0.8em; cursor:pointer; font-weight:bold; font-family:inherit; transition:all 0.15s; }
+.controls button:hover { filter:brightness(1.2); }
+.btn-send { background:#156082; color:#F8F6FB; }
+.btn-burst { background:#E97132; color:#F8F6FB; }
+.btn-down { background:#A02B93; color:#F8F6FB; }
+.btn-reset { background:#432879; color:#F8F6FB; }
+
+/* Pipeline */
+.stages { display:flex; gap:8px; align-items:stretch; }
+.stage { flex:1; background:#0E2841; border:1px solid #432879; border-radius:8px; padding:12px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height: 140px; transition:all 0.3s; }
+.stage.active { border-color:#E97132; box-shadow:0 0 12px rgba(233,113,50,0.3); }
+.stage.reject { border-color:#E97132; background:#2A1520; }
+.stage .num { font-size:1.6em; font-weight:bold; color:#0F9ED5; margin-bottom:4px; }
+.stage .label { font-size:0.7em; color:#8A7BB5; margin-bottom:6px; }
+.stage .detail { font-size:0.65em; color:#F8F6FB; }
+
+/* Token bucket */
+.bucket-bar { width:100%; height:20px; background:#0E2841; border-radius:4px; overflow:hidden; margin:4px 0; }
+.bucket-fill { height:100%; background:linear-gradient(90deg,#196B24,#4ade80); border-radius:4px; transition:width 0.3s; }
+.bucket-fill.flash { filter:brightness(1.5); }
+.bucket-text { font-size:0.65em; color:#8A7BB5; }
+
+/* Backend indicators */
+.backend { display:flex; align-items:center; gap:10px; padding:8px 12px; margin:4px 0; border-radius:6px; background:#0E2841; cursor:pointer; transition:all 0.2s; }
+.backend.dead { opacity:0.35; background:#2A1520; }
+.backend .dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.backend .dot.on { background:#4ade80; box-shadow:0 0 6px #4ade80; }
+.backend .dot.off { background:#E97132; }
+.backend .name { flex:1; font-size:0.75em; color:#F8F6FB; }
+.backend .hits { font-size:0.7em; color:#8A7BB5; }
+.backend .hint { font-size:0.55em; color:#8A7BB5; }
+
+/* Log */
+.log { flex:1; min-height:0; overflow-y:auto; font-family:monospace; font-size:0.7em; line-height:1.5; }
+.log .entry { padding:2px 0; border-bottom:1px solid #43287970; white-space:nowrap; }
+.log .entry .ts { color:#8A7BB5; }
+.log .entry .ok { color:#4ade80; }
+.log .entry .fail { color:#E97132; }
+.log .entry .warn { color:#fbbf24; }
+
+/* Right panel */
+.right-panel { width:280px; flex-shrink:0; display:flex; flex-direction:column; gap:10px; }
+
+/* Shell script box */
+.shell { font-family:monospace; font-size:0.7em; background:#0E2841; padding:8px 10px; border-radius:6px; color:#4ade80; }
+.shell span { color:#8A7BB5; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>AI 网关 — 请求处理流水线</h1>
+  <div class="sub">认证 → 限流 (Token Bucket) → 模型路由 → 转发推理 &nbsp;|&nbsp; 点击模型节点切换健康状态</div>
+</div>
+
+<div class="content">
+
+<div class="panel">
+  <!-- Controls -->
+  <div class="box">
+    <div class="controls">
+      <button class="btn-send" onclick="sendOne()">发送 1 个请求</button>
+      <button class="btn-burst" onclick="sendBurst()">连续 15 个 (触发 429)</button>
+      <button class="btn-down" onclick="allDown()">全部宕机 (触发 503)</button>
+      <button class="btn-reset" onclick="resetAll()">重置</button>
+    </div>
+  </div>
+
+  <!-- Pipeline -->
+  <div class="stages" id="stages">
+    <div class="stage" id="stage-auth">
+      <div class="num">①</div>
+      <div class="label">认证</div>
+      <div class="detail" id="auth-detail">API Key</div>
+    </div>
+    <div class="stage" id="stage-rate">
+      <div class="num">②</div>
+      <div class="label">限流 · Token Bucket</div>
+      <div class="bucket-bar"><div class="bucket-fill" id="bucket-fill" style="width:100%"></div></div>
+      <div class="bucket-text" id="bucket-text">10 / 10</div>
+    </div>
+    <div class="stage" id="stage-route">
+      <div class="num">③</div>
+      <div class="label">模型路由</div>
+      <div class="detail" id="route-detail">—</div>
+    </div>
+    <div class="stage" id="stage-fwd">
+      <div class="num">④</div>
+      <div class="label">转发推理</div>
+      <div class="detail" id="fwd-detail">—</div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="box" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+    <h3>请求日志 <span style="color:#8A7BB5;font-weight:normal;font-size:0.7em;" id="log-count">0 条</span></h3>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<!-- Right: backends + quick start -->
+<div class="right-panel">
+  <div class="box">
+    <h3>模型节点 <span style="font-size:0.6em;color:#8A7BB5;">(点击模拟宕机)</span></h3>
+    <div class="backend" id="be-8001" onclick="toggleBackend(8001)">
+      <div class="dot on" id="dot-8001"></div>
+      <span class="name">Qwen2.5-7B</span>
+      <span class="hits" id="hits-8001">0 hits</span>
+    </div>
+    <div class="backend" id="be-8002" onclick="toggleBackend(8002)">
+      <div class="dot on" id="dot-8002"></div>
+      <span class="name">Llama-3-8B</span>
+      <span class="hits" id="hits-8002">0 hits</span>
+    </div>
+    <div style="font-size:0.55em;color:#432879;margin-top:4px;line-height:1.4;">
+      同模型可部署多副本 →<br>Cache-Aware LB 优先路由到<br>已缓存 KV Cache 的副本
+    </div>
+  </div>
+
+  <div class="box">
+    <h3>启动真实环境</h3>
+    <div class="shell">
+      <span># 启动两个 mock 后端 + 网关</span><br>
+      bash demo.sh start<br><br>
+      <span># 测试网关</span><br>
+      curl http://localhost:8080/health<br><br>
+      <span># 停止</span><br>
+      bash demo.sh stop
+    </div>
+    <p style="font-size:0.6em;color:#8A7BB5;margin-top:8px;">
+      本页为纯前端模拟。启动真实环境后可对照验证。
+    </p>
+  </div>
+
+  <div class="box">
+    <h3>统计 <span style="font-size:0.6em;color:#8A7BB5;">(burst=10, rate=5/s)</span></h3>
+    <div style="font-size:0.7em;line-height:1.8;">
+      <div>总请求: <span id="stat-total" style="color:#F8F6FB;">0</span></div>
+      <div>200 OK: <span id="stat-200" style="color:#4ade80;">0</span></div>
+      <div>429 限流: <span id="stat-429" style="color:#fbbf24;">0</span></div>
+      <div>503 宕机: <span id="stat-503" style="color:#E97132;">0</span></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ── Token Bucket (对应 03_token_bucket.py) ──
+class TokenBucket {
+    constructor(rate, capacity) {
+        this.rate = rate;
+        this.capacity = capacity;
+        this.tokens = capacity;
+        this.lastRefill = performance.now();
+    }
+    refill() {
+        const now = performance.now();
+        const elapsed = (now - this.lastRefill) / 1000; // ms → s
+        this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.rate);
+        this.lastRefill = now;
+    }
+    consume() {
+        this.refill();
+        if (this.tokens >= 1) { this.tokens -= 1; return true; }
+        return false;
+    }
+}
+
+const bucket = new TokenBucket(5, 10); // 5 req/s, burst 10
+
+// ── Backend state ──
+const backends = {
+    8001: { healthy: true, hits: 0 },
+    8002: { healthy: true, hits: 0 },
+};
+
+let totalReqs = 0;
+let stat200 = 0, stat429 = 0, stat503 = 0;
+let totalTokens = 0;
+
+const modelNames = { 8001: 'Qwen2.5-7B', 8002: 'Llama-3-8B' };
+
+// ── Simulate one request through the pipeline ──
+function processRequest() {
+    totalReqs++;
+    const now = new Date();
+    const ts = now.toTimeString().slice(0,8);
+    let result;
+
+    // ① Auth
+    const authPassed = true; // always passes in demo
+    highlight('stage-auth', 'active');
+    setTimeout(() => clearHighlight('stage-auth'), 300);
+
+    // ② Rate Limit
+    let rateResult;
+    if (bucket.consume()) {
+        rateResult = { ok: true, tokens: bucket.tokens };
+        highlight('stage-rate', 'active');
+    } else {
+        rateResult = { ok: false, tokens: bucket.tokens };
+        highlight('stage-rate', 'reject');
+        document.getElementById('bucket-fill').classList.add('flash');
+        setTimeout(() => document.getElementById('bucket-fill').classList.remove('flash'), 300);
+    }
+    setTimeout(() => clearHighlight('stage-rate'), 600);
+
+    // ③ Route
+    let backend = null;
+    if (rateResult.ok) {
+        const healthy = Object.entries(backends).filter(([,b]) => b.healthy);
+        if (healthy.length > 0) {
+            // weighted random — equal weights
+            const idx = Math.random() < 0.5 ? 0 : 1;
+            backend = healthy[idx] ? healthy[idx][0] : healthy[0] ? healthy[0][0] : null;
+            if (backend) {
+                backends[backend].hits++;
+                highlight('stage-route', 'active');
+            }
+        }
+    }
+    setTimeout(() => clearHighlight('stage-route'), 500);
+
+    // ④ Forward → result
+    if (!authPassed) {
+        result = { code: 401, label: '401 认证失败', cls: 'fail' };
+    } else if (!rateResult.ok) {
+        result = { code: 429, label: '429 限流', cls: 'warn' };
+        stat429++;
+    } else if (!backend) {
+        result = { code: 503, label: '503 模型全宕', cls: 'fail' };
+        stat503++;
+    } else {
+        const model = modelNames[backend];
+        const tokens = Math.floor(Math.random() * 300 + 50); // 模拟 token 消耗
+        totalTokens += tokens;
+        result = { code: 200, label: `200 (→ ${model})`, cls: 'ok', tokens: tokens };
+        stat200++;
+    }
+    highlight('stage-fwd', result.code === 200 ? 'active' : 'reject');
+    setTimeout(() => clearHighlight('stage-fwd'), 400);
+
+    // Log
+    const entry = document.createElement('div');
+    entry.className = 'entry';
+    const modelStr = backend ? modelNames[backend] : '—';
+    const tokenStr = result.tokens ? ` <span class="ts">${result.tokens} tokens</span>` : '';
+    entry.innerHTML = `<span class="ts">${ts}</span> req#${totalReqs} → `
+        + `认证<span class="ok">✓</span> → `
+        + (rateResult.ok
+            ? `令牌<span class="ok">${(rateResult.tokens+1).toFixed(1)}→${rateResult.tokens.toFixed(1)}</span>`
+            : `令牌<span class="warn">BLOCKED</span>`)
+        + ` → `
+        + (backend ? `${modelStr}` : `—`)
+        + ` → <span class="${result.cls}">${result.label}</span>${tokenStr}`;
+    const log = document.getElementById('log');
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+
+    // Update UI
+    document.getElementById('log-count').textContent = `${totalReqs} 条`;
+    document.getElementById('stat-total').textContent = totalReqs;
+    document.getElementById('stat-200').textContent = stat200;
+    document.getElementById('stat-429').textContent = stat429;
+    document.getElementById('stat-503').textContent = stat503;
+    document.getElementById('stat-tokens').textContent = totalTokens;
+
+    updateBucketUI();
+    updateRouteUI(backend);
+    updateFwdUI(result);
+    updateHits();
+}
+
+// ── UI helpers ──
+function highlight(id, cls) {
+    const el = document.getElementById(id);
+    el.classList.add(cls);
+}
+function clearHighlight(id) {
+    const el = document.getElementById(id);
+    el.classList.remove('active', 'reject');
+}
+function updateBucketUI() {
+    bucket.refill();
+    const pct = Math.max(0, (bucket.tokens / bucket.capacity) * 100);
+    document.getElementById('bucket-fill').style.width = pct + '%';
+    document.getElementById('bucket-text').textContent =
+        `${bucket.tokens.toFixed(1)} / ${bucket.capacity}`;
+    // color warning when low
+    const fill = document.getElementById('bucket-fill');
+    if (bucket.tokens < 1) fill.style.background = 'linear-gradient(90deg,#E97132,#fbbf24)';
+    else if (bucket.tokens < 3) fill.style.background = 'linear-gradient(90deg,#fbbf24,#4ade80)';
+    else fill.style.background = 'linear-gradient(90deg,#196B24,#4ade80)';
+}
+function updateRouteUI(backend) {
+    document.getElementById('route-detail').textContent =
+        backend ? `→ ${modelNames[backend]}` : '无可用模型';
+}
+function updateFwdUI(result) {
+    document.getElementById('fwd-detail').textContent = result.label;
+}
+function updateHits() {
+    document.getElementById('hits-8001').textContent = `${backends[8001].hits} hits`;
+    document.getElementById('hits-8002').textContent = `${backends[8002].hits} hits`;
+}
+
+// ── Actions ──
+function sendOne() { processRequest(); }
+function allDown() {
+    // 一键 kill 所有后端 → 发请求触发 503
+    backends[8001].healthy = false;
+    backends[8002].healthy = false;
+    document.getElementById('dot-8001').className = 'dot off';
+    document.getElementById('dot-8002').className = 'dot off';
+    document.getElementById('be-8001').classList.add('dead');
+    document.getElementById('be-8002').classList.add('dead');
+    processRequest(); // 立即发一个请求验证 503
+}
+
+function sendBurst() {
+    // 15ms 间隔 → 15 个请求在 210ms 内发完
+    // burst=10, rate=5/s → 210ms 内仅 refill ~1 token
+    // → 前 11 个通过, 后 4 个触发 429
+    for (let i = 0; i < 15; i++) {
+        setTimeout(() => processRequest(), i * 15);
+    }
+}
+
+function resetAll() {
+    bucket.tokens = bucket.capacity;
+    bucket.lastRefill = performance.now();
+    backends[8001] = { healthy: true, hits: 0 };
+    backends[8002] = { healthy: true, hits: 0 };
+    totalReqs = stat200 = stat429 = stat503 = 0;
+    totalTokens = 0;
+    document.getElementById('log').innerHTML = '';
+    document.getElementById('log-count').textContent = '0 条';
+    document.getElementById('stat-total').textContent = '0';
+    document.getElementById('stat-200').textContent = '0';
+    document.getElementById('stat-429').textContent = '0';
+    document.getElementById('stat-503').textContent = '0';
+    document.getElementById('stat-tokens').textContent = '0';
+    updateBucketUI();
+    updateRouteUI(null);
+    updateFwdUI({label:'—'});
+    updateHits();
+    document.getElementById('dot-8001').className = 'dot on';
+    document.getElementById('dot-8002').className = 'dot on';
+    document.getElementById('be-8001').classList.remove('dead');
+    document.getElementById('be-8002').classList.remove('dead');
+    clearHighlight('stage-auth');
+    clearHighlight('stage-rate');
+    clearHighlight('stage-route');
+    clearHighlight('stage-fwd');
+}
+
+// ── Backend toggle ──
+function toggleBackend(port) {
+    const b = backends[port];
+    b.healthy = !b.healthy;
+    const dot = document.getElementById(`dot-${port}`);
+    const be = document.getElementById(`be-${port}`);
+    if (b.healthy) {
+        dot.className = 'dot on';
+        be.classList.remove('dead');
+    } else {
+        dot.className = 'dot off';
+        be.classList.add('dead');
+    }
+}
+
+// ── Real-time bucket refill animation ──
+setInterval(updateBucketUI, 200);
+</script>
+</body>
+</html>

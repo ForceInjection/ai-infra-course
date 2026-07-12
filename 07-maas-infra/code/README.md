@@ -5,26 +5,26 @@
 | 文件            | 内容                                                                    | 对应 PPT        |
 | --------------- | ----------------------------------------------------------------------- | --------------- |
 | `ai_gateway.py` | Flask 简易 AI 网关 — 加权路由 + Token Bucket 限流 + 健康检查 + 故障转移 | 第 42 页 [动手] |
-
-vLLM Router 生产级网关通过 pip 安装:  
-`pip install vllm-router` (选做, 见 homework 任务 3)
+| `mock_vllm.py`  | vLLM Mock 后端 — 无需 GPU，本地测试网关用                               | —               |
 
 ## 环境要求
 
 - Python ≥ 3.10
 - Flask + requests: `pip install flask requests`
-- vLLM ≥ 0.6.0 (后端，需要 GPU)
-- 或使用任意 HTTP 服务模拟后端 (修改 `BACKENDS` 配置即可)
+- vLLM ≥ 0.6.0 (真实后端，需要 GPU；测试网关功能可用 `mock_vllm.py`，无需 GPU)
 
 ## 运行方法
 
 ```bash
-# 1. 启动两个 vLLM 后端
+# 方式 1: 使用 mock 后端 (推荐，无需 GPU)
+python3 mock_vllm.py --port 8001 &
+python3 mock_vllm.py --port 8002 &
+python3 ai_gateway.py
+
+# 方式 2: 使用真实 vLLM 后端
 vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8001 &
 vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8002 &
-
-# 2. 启动网关
-python ai_gateway.py
+python3 ai_gateway.py
 ```
 
 ## 测试

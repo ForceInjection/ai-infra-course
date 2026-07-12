@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 网关 — 推理感知请求流水线</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:10px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.2em; color:#F8F6FB; }
+.header .sub { font-size:0.65em; color:#8A7BB5; margin-top:2px; }
+.content { flex:1; min-height:0; display:flex; gap:10px; padding:0 14px 10px; max-width:1300px; width:100%; margin:0 auto; }
+.main { flex:1; display:flex; flex-direction:column; gap:8px; min-width:0; }
+.box { background:#231440; border:1px solid #432879; border-radius:8px; padding:10px 12px; }
+.box h3 { font-size:0.8em; color:#8A7BB5; margin-bottom:6px; }
+.side { width:310px; flex-shrink:0; display:flex; flex-direction:column; gap:8px; }
+
+/* Controls */
+.controls { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.controls button { padding:6px 14px; border:none; border-radius:6px; font-size:0.75em; cursor:pointer; font-weight:bold; font-family:inherit; transition:all 0.15s; }
+.controls button:hover { filter:brightness(1.2); }
+.controls select { padding:5px 8px; border-radius:6px; font-size:0.75em; background:#0E2841; color:#F8F6FB; border:1px solid #432879; font-family:inherit; }
+.btn-send { background:#156082; color:#F8F6FB; }
+.btn-burst { background:#E97132; color:#F8F6FB; }
+.btn-reset { background:#432879; color:#F8F6FB; }
+
+/* Pipeline stages */
+.stages { display:flex; gap:6px; align-items:stretch; }
+.stage { flex:1; background:#0E2841; border:2px solid #432879; border-radius:8px; padding:10px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:130px; transition:all 0.3s; }
+.stage.active { border-color:#fbbf24; box-shadow:0 0 12px rgba(251,191,36,0.25); }
+.stage.reject { border-color:#E97132; background:#2A1520; }
+.stage .num { font-size:1.3em; font-weight:bold; color:#0F9ED5; margin-bottom:2px; }
+.stage .label { font-size:0.7em; color:#8A7BB5; margin-bottom:4px; }
+.stage .detail { font-size:0.65em; color:#F8F6FB; }
+
+/* Token bucket */
+.bucket-bar { width:100%; height:14px; background:#0E2841; border-radius:3px; overflow:hidden; margin:3px 0; }
+.bucket-fill { height:100%; background:linear-gradient(90deg,#196B24,#4ade80); border-radius:3px; transition:width 0.3s; }
+.bucket-fill.flash { filter:brightness(1.5); }
+.bucket-text { font-size:0.6em; color:#8A7BB5; }
+
+/* Worker cards */
+.worker { display:flex; align-items:center; gap:8px; padding:6px 10px; margin:3px 0; border-radius:6px; background:#0E2841; font-size:0.7em; transition:background 0.3s; }
+.worker .info { flex:1; }
+.worker .info .name { color:#F8F6FB; }
+.worker .info .cache-bar-wrap { height:6px; background:#1A0F2E; border-radius:3px; margin-top:3px; overflow:hidden; }
+.worker .info .cache-bar { height:100%; border-radius:3px; transition:width 0.5s; }
+.worker .info .cache-bar.hot { background:#4ade80; }
+.worker .info .cache-bar.warm { background:#fbbf24; }
+.worker .info .cache-bar.cold { background:#E97132; }
+.worker .hits { color:#8A7BB5; font-size:0.85em; text-align:right; }
+
+/* LB strategy */
+.strategy { display:flex; gap:4px; flex-wrap:wrap; }
+.strategy label { display:flex; align-items:center; gap:3px; font-size:0.7em; color:#C8BEE0; cursor:pointer; padding:4px 8px; border-radius:4px; background:#0E2841; }
+.strategy input[type=radio] { accent-color:#0F9ED5; }
+.strategy input:checked + span { color:#0F9ED5; font-weight:bold; }
+
+/* Log */
+.log { flex:1; min-height:0; overflow-y:auto; font-family:monospace; font-size:0.65em; line-height:1.6; }
+.log .entry { padding:1px 0; border-bottom:1px solid #43287950; white-space:nowrap; }
+.log .ts { color:#8A7BB5; }
+.log .ok { color:#4ade80; }
+.log .fail { color:#E97132; }
+.log .warn { color:#fbbf24; }
+.log .info { color:#0F9ED5; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>AI 网关 — 推理感知请求流水线</h1>
+  <div class="sub">Semantic Router 选模型 · Cache-Aware LB 选 Worker · Token 令牌桶限流 · KV Cache 亲和性</div>
+</div>
+
+<div class="content">
+
+<!-- Main -->
+<div class="main">
+  <div class="box">
+    <div class="controls">
+      <select id="req-type" onchange="onTypeChange()">
+        <option value="code">💻 写一个排序算法</option>
+        <option value="translate">🌐 翻译这段文档</option>
+        <option value="chat">💬 聊天问答</option>
+      </select>
+      <button class="btn-send" onclick="sendOne()">发送 1 个</button>
+      <button class="btn-burst" onclick="sendBurst()">连续 10 个 (Cache 升温)</button>
+      <button class="btn-reset" onclick="resetAll()">重置</button>
+    </div>
+  </div>
+
+  <div class="stages">
+    <div class="stage" id="stage-rate">
+      <div class="num">①</div>
+      <div class="label">Token 令牌桶限流</div>
+      <div class="bucket-bar"><div class="bucket-fill" id="bucket-fill" style="width:100%"></div></div>
+      <div class="bucket-text" id="bucket-text">500 / 500 tokens</div>
+    </div>
+    <div class="stage" id="stage-route">
+      <div class="num">②</div>
+      <div class="label">Semantic Router</div>
+      <div class="detail" id="route-detail">—</div>
+    </div>
+    <div class="stage" id="stage-lb">
+      <div class="num">③</div>
+      <div class="label" id="lb-label">Cache-Aware LB</div>
+      <div class="detail" id="lb-detail">—</div>
+    </div>
+    <div class="stage" id="stage-fwd">
+      <div class="num">④</div>
+      <div class="label">转发推理</div>
+      <div class="detail" id="fwd-detail">—</div>
+    </div>
+  </div>
+
+  <div class="box" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+    <h3>请求日志 <span style="color:#8A7BB5;font-weight:normal;font-size:0.7em;" id="log-count">0 条</span></h3>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<!-- Side -->
+<div class="side">
+  <div class="box">
+    <h3>负载均衡策略</h3>
+    <div class="strategy">
+      <label><input type="radio" name="lb" value="random" onchange="onStrategyChange()"><span>Random</span></label>
+      <label><input type="radio" name="lb" value="hash" onchange="onStrategyChange()"><span>Consistent Hash</span></label>
+      <label><input type="radio" name="lb" value="cache" checked onchange="onStrategyChange()"><span>Cache-Aware ★</span></label>
+    </div>
+    <div style="font-size:0.6em;color:#8A7BB5;margin-top:5px;line-height:1.4;" id="strategy-hint">
+      ★ 查询每个 Worker 的 KV Cache 命中率<br>选最高的那个 — vLLM Router 默认策略
+    </div>
+  </div>
+
+  <div class="box">
+    <h3>Worker 池 — KV Cache 热度</h3>
+    <div class="worker" id="w-code1">
+      <div class="info">
+        <div class="name">CodeLlama-34B <span style="color:#8A7BB5;font-size:0.85em;">#1</span></div>
+        <div class="cache-bar-wrap"><div class="cache-bar hot" id="bar-code1" style="width:85%"></div></div>
+      </div>
+      <div class="hits"><span style="color:#4ade80;" id="cache-code1">85%</span><br><span id="hits-code1" style="font-size:0.85em;">0</span></div>
+    </div>
+    <div class="worker" id="w-code2">
+      <div class="info">
+        <div class="name">CodeLlama-34B <span style="color:#8A7BB5;font-size:0.85em;">#2</span></div>
+        <div class="cache-bar-wrap"><div class="cache-bar warm" id="bar-code2" style="width:30%"></div></div>
+      </div>
+      <div class="hits"><span style="color:#fbbf24;" id="cache-code2">30%</span><br><span id="hits-code2" style="font-size:0.85em;">0</span></div>
+    </div>
+    <div class="worker" id="w-qwen">
+      <div class="info">
+        <div class="name">Qwen2.5-7B</div>
+        <div class="cache-bar-wrap"><div class="cache-bar hot" id="bar-qwen" style="width:60%"></div></div>
+      </div>
+      <div class="hits"><span style="color:#4ade80;" id="cache-qwen">60%</span><br><span id="hits-qwen" style="font-size:0.85em;">0</span></div>
+    </div>
+    <div class="worker" id="w-llama">
+      <div class="info">
+        <div class="name">Llama-3-8B</div>
+        <div class="cache-bar-wrap"><div class="cache-bar warm" id="bar-llama" style="width:45%"></div></div>
+      </div>
+      <div class="hits"><span style="color:#fbbf24;" id="cache-llama">45%</span><br><span id="hits-llama" style="font-size:0.85em;">0</span></div>
+    </div>
+    <div style="font-size:0.55em;color:#432879;margin-top:4px;line-height:1.4;">
+      Cache 热度动态模拟:<br>
+      命中 → +2~5% / 未命中 → -1%
+    </div>
+  </div>
+
+  <div class="box">
+    <h3>统计</h3>
+    <div style="font-size:0.7em;line-height:1.7;">
+      <div>总请求: <span id="stat-total" style="color:#F8F6FB;">0</span></div>
+      <div>200 OK: <span id="stat-200" style="color:#4ade80;">0</span></div>
+      <div>429 限流: <span id="stat-429" style="color:#fbbf24;">0</span></div>
+      <div>总 Token: <span id="stat-tokens" style="color:#0F9ED5;">0</span></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ── Semantic Router: request type → model → workers ──
+const routeMap = {
+    code:      { model: 'CodeLlama-34B', workers: ['code1','code2'] },
+    translate: { model: 'Qwen2.5-7B',   workers: ['qwen'] },
+    chat:      { model: 'Llama-3-8B',   workers: ['llama'] },
+};
+
+// ── Worker state ──
+const workers = {
+    code1: { hits: 0, cache: 0.85, model: 'CodeLlama-34B' },
+    code2: { hits: 0, cache: 0.30, model: 'CodeLlama-34B' },
+    qwen:  { hits: 0, cache: 0.60, model: 'Qwen2.5-7B' },
+    llama: { hits: 0, cache: 0.45, model: 'Llama-3-8B' },
+};
+
+let lbStrategy = 'cache';
+let reqType = 'code';
+let totalReqs = 0, stat200 = 0, stat429 = 0, totalTokens = 0;
+let hashBase = 0;
+
+// ── Token Bucket (per-token, not per-request) ──
+class TokenBucket {
+    constructor(rate, capacity) {
+        this.rate = rate; this.capacity = capacity;
+        this.tokens = capacity; this.lastRefill = performance.now();
+    }
+    refill() {
+        const now = performance.now();
+        this.tokens = Math.min(this.capacity, this.tokens + (now - this.lastRefill) / 1000 * this.rate);
+        this.lastRefill = now;
+    }
+    consume(n) { this.refill(); if (this.tokens >= n) { this.tokens -= n; return true; } return false; }
+}
+const bucket = new TokenBucket(200, 500);
+
+// ── Process request ──
+function processRequest() {
+    totalReqs++;
+    const ts = new Date().toTimeString().slice(0,8);
+    const rt = routeMap[reqType];
+    const tokensNeeded = Math.floor(Math.random() * 70 + 80);
+
+    // ① Token Bucket
+    let rateOk = bucket.consume(tokensNeeded);
+    if (rateOk) highlight('stage-rate','active'); else highlight('stage-rate','reject');
+    setTimeout(() => clearHighlight('stage-rate'), 500);
+
+    // ② Semantic Router
+    let selectedModel = rt.model;
+    let candidates = rt.workers;
+    if (rateOk) {
+        highlight('stage-route','active');
+        document.getElementById('route-detail').textContent = `"${reqType}" → ${selectedModel}`;
+    }
+    setTimeout(() => clearHighlight('stage-route'), 400);
+
+    // ③ LB — pick worker
+    let picked = null;
+    if (rateOk && candidates.length > 0) {
+        switch (lbStrategy) {
+            case 'random':
+                picked = candidates[Math.floor(Math.random() * candidates.length)];
+                break;
+            case 'hash': {
+                const h = (reqType === 'code' ? 7 : reqType === 'translate' ? 3 : 5) + hashBase++;
+                picked = candidates[h % candidates.length];
+                break;
+            }
+            case 'cache':
+                picked = candidates.reduce((best, w) => workers[w].cache > workers[best].cache ? w : best, candidates[0]);
+                break;
+        }
+        workers[picked].hits++;
+        workers[picked].cache = Math.min(0.95, workers[picked].cache + Math.random() * 0.03 + 0.02);
+        highlight('stage-lb','active');
+        document.getElementById('lb-detail').textContent = `${workers[picked].model} (cache ${(workers[picked].cache*100).toFixed(0)}%)`;
+    }
+    setTimeout(() => clearHighlight('stage-lb'), 500);
+
+    // ④ Result
+    let result;
+    if (!rateOk) { result = { code:429, label:'429 限流', cls:'warn' }; stat429++; }
+    else if (!picked) { result = { code:503, label:'503', cls:'fail' }; }
+    else { totalTokens += tokensNeeded; result = { code:200, label:'200', cls:'ok', tokens:tokensNeeded }; stat200++; }
+
+    highlight('stage-fwd', result.code===200 ? 'active' : 'reject');
+    setTimeout(() => clearHighlight('stage-fwd'), 400);
+
+    // Cool non-selected workers
+    Object.keys(workers).forEach(w => {
+        if (w !== picked && workers[w].cache > 0.1)
+            workers[w].cache = Math.max(0.1, workers[w].cache - Math.random() * 0.008);
+    });
+
+    // Log
+    const entry = document.createElement('div');
+    entry.className = 'entry';
+    const m = picked ? workers[picked].model : '—';
+    const cacheStr = picked ? ` cache:${(workers[picked].cache*100).toFixed(0)}%` : '';
+    entry.innerHTML = `<span class="ts">${ts}</span> #${totalReqs} `
+        + (rateOk ? `<span class="ok">${(bucket.tokens+tokensNeeded).toFixed(0)}→${bucket.tokens.toFixed(0)}t</span>` : `<span class="warn">BLOCKED</span>`)
+        + ` → <span class="info">${selectedModel}</span> → ${picked||'—'}`
+        + (result.tokens ? ` <span class="ok">${result.tokens}t</span>` : '')
+        + ` <span class="ts">${cacheStr}</span>`
+        + ` → <span class="${result.cls}">${result.label}</span>`;
+    const log = document.getElementById('log');
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+
+    document.getElementById('log-count').textContent = `${totalReqs} 条`;
+    document.getElementById('stat-total').textContent = totalReqs;
+    document.getElementById('stat-200').textContent = stat200;
+    document.getElementById('stat-429').textContent = stat429;
+    document.getElementById('stat-tokens').textContent = totalTokens;
+    updateBucketUI(); updateWorkerUI(); updateHits();
+}
+
+// ── UI ──
+function highlight(id, cls) { document.getElementById(id).classList.add(cls); }
+function clearHighlight(id) { document.getElementById(id).classList.remove('active','reject'); }
+function updateBucketUI() {
+    bucket.refill();
+    const pct = Math.max(0, bucket.tokens / bucket.capacity * 100);
+    const fill = document.getElementById('bucket-fill');
+    fill.style.width = pct + '%';
+    document.getElementById('bucket-text').textContent = `${bucket.tokens.toFixed(0)} / ${bucket.capacity} tokens`;
+    if (bucket.tokens < 50) fill.style.background = 'linear-gradient(90deg,#E97132,#fbbf24)';
+    else if (bucket.tokens < 150) fill.style.background = 'linear-gradient(90deg,#fbbf24,#4ade80)';
+    else fill.style.background = 'linear-gradient(90deg,#196B24,#4ade80)';
+}
+function updateWorkerUI() {
+    Object.entries(workers).forEach(([id, w]) => {
+        const pct = (w.cache * 100).toFixed(0);
+        const bar = document.getElementById(`bar-${id}`);
+        const label = document.getElementById(`cache-${id}`);
+        if (bar) { bar.style.width = pct + '%'; bar.className = `cache-bar ${w.cache > 0.5 ? 'hot' : w.cache > 0.3 ? 'warm' : 'cold'}`; }
+        if (label) { label.textContent = `${pct}%`; label.style.color = w.cache > 0.5 ? '#4ade80' : w.cache > 0.3 ? '#fbbf24' : '#E97132'; }
+    });
+}
+function updateHits() { Object.entries(workers).forEach(([id, w]) => { const el = document.getElementById(`hits-${id}`); if (el) el.textContent = w.hits; }); }
+function onTypeChange() { reqType = document.getElementById('req-type').value; }
+function onStrategyChange() {
+    lbStrategy = document.querySelector('input[name=lb]:checked').value;
+    const hints = {
+        random: '随机选一个 Worker — 不感知 Cache 状态',
+        hash: '同类型请求 → 固定 Worker → KV Cache 热命中',
+        cache: '★ 查询每个 Worker 的 Cache 命中率<br>选最高的 — vLLM Router 默认策略',
+    };
+    const labels = { random:'Random LB', hash:'Consistent Hash LB', cache:'Cache-Aware LB' };
+    document.getElementById('strategy-hint').innerHTML = hints[lbStrategy];
+    document.getElementById('lb-label').textContent = labels[lbStrategy];
+}
+function sendOne() { processRequest(); }
+function sendBurst() {
+    // 连续 10 个同类型请求 → Cache 明显升温
+    for (let i = 0; i < 10; i++) setTimeout(() => processRequest(), i * 15);
+}
+function resetAll() {
+    bucket.tokens = bucket.capacity; bucket.lastRefill = performance.now();
+    workers.code1 = { hits:0, cache:0.85, model:'CodeLlama-34B' };
+    workers.code2 = { hits:0, cache:0.30, model:'CodeLlama-34B' };
+    workers.qwen  = { hits:0, cache:0.60, model:'Qwen2.5-7B' };
+    workers.llama = { hits:0, cache:0.45, model:'Llama-3-8B' };
+    totalReqs = stat200 = stat429 = 0; totalTokens = 0; hashBase = 0;
+    document.getElementById('log').innerHTML = '';
+    document.getElementById('log-count').textContent = '0 条';
+    ['total','200','429','tokens'].forEach(id => document.getElementById(`stat-${id}`).textContent = '0');
+    ['route-detail','lb-detail','fwd-detail'].forEach(id => document.getElementById(id).textContent = '—');
+    updateBucketUI(); updateWorkerUI(); updateHits();
+    document.querySelectorAll('.stage').forEach(el => el.classList.remove('active','reject'));
+}
+
+setInterval(updateBucketUI, 200);
+</script>
+</body>
+</html>

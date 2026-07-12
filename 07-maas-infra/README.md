@@ -1,6 +1,6 @@
 # 模块 7：从推理引擎到服务平台
 
-> 90 分钟 &nbsp;|&nbsp; 45 页 PPT &nbsp;|&nbsp; 1 个 Flask 网关 &nbsp;|&nbsp; 无独立可视化 (架构图在 PPT 中呈现)
+> 90 分钟 &nbsp;|&nbsp; 45 页 PPT &nbsp;|&nbsp; 1 个 Flask 网关 + 1 个 Mock 后端 + 2 个交互式 HTML
 
 ## 目录结构
 
@@ -12,10 +12,24 @@
 ├── hands-on-exercise.md         # 课堂动手题
 ├── homework.md                  # 课后练习
 ├── lab-environment.md           # 实验环境搭建说明
-└── code/                        # 配套代码
-    ├── README.md                #   使用说明 + 测试步骤
-    └── ai_gateway.py            #   Flask 简易 AI 网关 (PPT 第 42 页)
+├── code/                        # 配套代码
+│   ├── README.md                #   使用说明 + 测试步骤
+│   ├── ai_gateway.py            #   Flask 简易 AI 网关 (PPT 第 42 页)
+│   ├── mock_vllm.py             #   vLLM Mock 后端 (无需 GPU，本地测试用)
+│   └── demo.sh                  #   一键启动/停止 (bash demo.sh start|stop)
+└── visuals/                        # 可视化 HTML (2 个)
+    ├── gateway-pipeline.html       #   基础网关流水线 — 认证·限流·路由·转发
+    └── ai-gateway-pipeline.html    #   AI 网关流水线 — Semantic Router · Cache-Aware LB
 ```
+
+## 可视化 HTML
+
+| 可视化 | 用途 | 教学场景 |
+|--------|------|----------|
+| [基础网关流水线](visuals/gateway-pipeline.html) | 四段式流水线: 认证 → 令牌桶限流 → 加权路由 → 转发 | 快速理解网关核心流程：发送请求、触发限流 (429)、模拟宕机 (503) |
+| [AI 网关推理流水线](visuals/ai-gateway-pipeline.html) | Semantic Router 模型路由 + Cache-Aware LB + 令牌桶 + KV Cache 亲和性 | 深入讲解 vLLM Router：切换 LB 策略对比、请求类型→模型路由、Cache 热度驱动 Worker 选择 |
+
+**AI 网关交互方式**: 下拉选择请求类型 («写代码»/«翻译»/«聊天») → Semantic Router 自动选模型；切换 LB 策略 (Random / Consistent Hash / Cache-Aware) 观察 Worker 选择变化；Worker Cache 热度动态变化 (命中→升温，未命中→降温)。
 
 ## 教学流程
 

@@ -4,13 +4,16 @@
 课堂动手题 (模块 7 · 第 42 页): 体验推理网关的核心机制。
 
 用法:
-    # 1. 启动两个 vLLM 后端
-    vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8001 &
-    vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8002 &
+    # 1. 启动两个 mock 后端 (无需 GPU, 测试用)
+    python3 mock_vllm.py --port 8001 &
+    python3 mock_vllm.py --port 8002 &
+
+    # 1-alt. 或使用真实的 vLLM 后端
+    # vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8001 &
 
     # 2. 启动网关
     pip install flask requests
-    python ai_gateway.py
+    python3 ai_gateway.py
 
     # 3. 测试
     curl http://localhost:8080/v1/chat/completions \
@@ -35,6 +38,8 @@ from flask import Flask, Response, jsonify, request
 app = Flask(__name__)
 
 # ============ 配置 ============
+# 后端按"组"组织 — 不同 API Key 可路由到不同模型组.
+# "default" 组: 两个等权后端, 模拟同模型的双副本部署.
 BACKENDS = {
     "default": [
         {"url": "http://localhost:8001", "weight": 1},
@@ -42,8 +47,9 @@ BACKENDS = {
     ],
 }
 
+# API Key → 后端组映射: 不同用户/应用可指向不同的模型或副本组.
 API_KEYS = {
-    "test-key": "default",     # API Key → 后端组
+    "test-key": "default",
     "admin-key": "default",
 }
 
@@ -60,12 +66,12 @@ class TokenBucket:
         self.rate = rate
         self.capacity = capacity
         self.tokens = capacity
-        self.last_refill = time.time()
+        self.last_refill = time.monotonic()
         self.lock = threading.Lock()
 
     def consume(self, tokens=1):
         with self.lock:
-            now = time.time()
+            now = time.monotonic()
             elapsed = now - self.last_refill
             self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
             self.last_refill = now
@@ -79,14 +85,26 @@ class TokenBucket:
 buckets = defaultdict(lambda: TokenBucket(rate=5, capacity=10))
 
 
-# ============ 健康检查 ============
+# ============ 健康检查 (带 TTL 缓存) ============
+_health_cache = {}          # url → (is_healthy, checked_at)
+_HEALTH_TTL = 2.0           # 缓存 2 秒，避免每次请求都探测所有后端
+
 def health_check(backend_url):
-    """主动健康检查: 查询 vLLM /v1/models 端点。"""
+    """主动健康检查: 查询 vLLM /v1/models 端点，结果缓存 _HEALTH_TTL 秒。"""
+    now = time.monotonic()
+    if backend_url in _health_cache:
+        cached, checked_at = _health_cache[backend_url]
+        if now - checked_at < _HEALTH_TTL:
+            return cached
+
     try:
         r = requests.get(f"{backend_url}/v1/models", timeout=2)
-        return r.status_code == 200
+        healthy = r.status_code == 200
     except requests.exceptions.RequestException:
-        return False
+        healthy = False
+
+    _health_cache[backend_url] = (healthy, now)
+    return healthy
 
 
 # ============ 加权随机路由 ============
