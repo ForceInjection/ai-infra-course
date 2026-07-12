@@ -60,6 +60,12 @@ static __thread int in_hook = 0;
 static size_t quota_bytes     = 0;  /* 配额上限 (bytes), 0 = 无限制 */
 static size_t allocated_bytes = 0;  /* 当前已分配总量 */
 
+/* ptr→size 映射表 — cudaFree 不传 size, 需要查表取出对应的分配大小
+ * HAMi-core 用双向链表 (src/allocator/allocator.c), 这里用固定数组简化 */
+#define MAX_ALLOCS 256
+static struct { void* ptr; size_t size; } alloc_table[MAX_ALLOCS];
+static int alloc_count = 0;
+
 /* ── 算力令牌桶 (对应模块 3 03_token_bucket.py 的 TokenBucket 类) ── */
 static double  launch_rate     = 0;   /* CUDA_CORE_RATE:    每秒补充令牌数 */
 static double  launch_capacity = 0;   /* CUDA_CORE_CAPACITY: 桶容量 (最大突发) */
@@ -146,6 +152,10 @@ cudaError_t cudaMalloc(void** devPtr, size_t size) {
     /* ── STEP 4: 记录并返回 ── */
     /* TODO: 如果 result == 0 (成功):
      *         allocated_bytes += size;
+     *         // 存入 ptr→size 映射表 (供 TODO 3 cudaFree 查表用)
+     *         alloc_table[alloc_count].ptr  = *devPtr;
+     *         alloc_table[alloc_count].size = size;
+     *         alloc_count++;
      *         fprintf(stderr, "[HOOK] cudaMalloc(%zu) -> %p | total: %.1f MB\n",
      *                 size, *devPtr, allocated_bytes / (1024.0*1024.0));
      */
@@ -220,19 +230,27 @@ cudaError_t cudaLaunchKernel(
 }
 
 /* ═══════════════════════════════════════════════════════════════
- * TODO 3 (选做): 显存释放 — cudaFree
+ * TODO 3 (选做): 显存释放 — cudaFree + ptr→size 映射表
+ *
+ * cudaFree(void* devPtr) 只传指针不传大小。要精确递减
+ * allocated_bytes，必须在 cudaMalloc 成功时保存 (ptr, size) 对，
+ * cudaFree 时查表取出 size 再扣除。
  *
  * 要求:
  *   1. 递归守卫 (同 TODO 1)
- *   2. 调用 real_cudaFree 释放显存
- *   3. 打印释放记录
+ *   2. 在 alloc_table[] 中找到 devPtr, 取出其 size
+ *   3. 调用 real_cudaFree(devPtr)
+ *   4. 成功后: allocated_bytes -= size, 将该条目从 alloc_table[] 删除
+ *   5. 打印释放记录 (含释放了多少字节)
  *
- * 签名: cudaError_t cudaFree(void* devPtr)
+ * 提示:
+ *   - 数据结构: 固定数组即可 (alloc_table[256]), 不需要链表
+ *   - 搜索: 线性遍历, O(n) 对大二作业够用了
+ *   - 删除: 考虑如何维护 alloc_table[] 的连续性 (或者不需要?)
+ *   - 如果 devPtr 不在表中, 只调 real_cudaFree, 不修改计数器
  *
- * 注意: cudaFree 不传 size 参数, 要精确跟踪已分配量需要额外维护
- *       ptr→size 映射表 (Hash Table 或链表). 简化方案: 只记录释放
- *       事件, 不递减 allocated_bytes. 与模块 3 01_mymalloc.c 第 98-108
- *       行 free() 的简化策略相同.
+ * 参考: HAMi-core allocator.c 第 179 行 remove_chunk() 用双向链表
+ *       实现同样的概念 — 你的数组版是它的简化。
  * ═══════════════════════════════════════════════════════════════ */
 
 cudaError_t cudaFree(void* devPtr) {
@@ -246,11 +264,17 @@ cudaError_t cudaFree(void* devPtr) {
     }
     in_hook = 1;
 
-    /* ── STEP 2: 调用原始 cudaFree ── */
+    /* ── STEP 2: 查表取 size ── */
+    size_t freed_size = 0;
+    /* TODO: 遍历 alloc_table[0..alloc_count-1], 找到 ptr == devPtr,
+     *       取出其 size 到 freed_size, 并从表中删除该条目 */
+
+    /* ── STEP 3: 调用原始 cudaFree ── */
     /* TODO: cudaError_t result = real_cudaFree(devPtr); */
 
-    /* ── STEP 3: 记录释放 (简化: 不递减 allocated_bytes) ── */
-    /* TODO: fprintf(stderr, "[HOOK] cudaFree(%p) -> %d\n", devPtr, result); */
+    /* ── STEP 4: 更新 allocated_bytes 并打印 ── */
+    /* TODO: 根据 result 和 freed_size 更新 allocated_bytes,
+     *       打印释放记录 (含释放字节数) */
 
     cudaError_t result = 0; /* ← 替换为上面的实现 */
     in_hook = 0;

@@ -34,23 +34,21 @@ LD_PRELOAD=./libcuda_hook.so \
 
 ## TODO 清单
 
-| TODO          | 函数               | 难度 | 对应课上内容                                                   |
-| ------------- | ------------------ | ---- | -------------------------------------------------------------- |
-| TODO 1        | `cudaMalloc`       | ★★☆  | 模块 3 `01_mymalloc.c` — LD_PRELOAD 三步模式 + 配额检查        |
-| TODO 2        | `cudaLaunchKernel` | ★★★  | 模块 3 `03_token_bucket.py` — 令牌桶 `_refill()` + `acquire()` |
-| TODO 3 (选做) | `cudaFree`         | ★★☆  | 模块 3 `01_mymalloc.c` `free()` — 简化释放跟踪                 |
+| TODO          | 函数                         | 难度 | 对应参考                                                       |
+| ------------- | ---------------------------- | ---- | -------------------------------------------------------------- |
+| TODO 1        | `cudaMalloc`                 | ★★☆  | 模块 3 `01_mymalloc.c` — LD_PRELOAD 三步模式 + 配额检查        |
+| TODO 2        | `cudaLaunchKernel`           | ★★★  | 模块 3 `03_token_bucket.py` — 令牌桶 `_refill()` + `acquire()` |
+| TODO 3 (选做) | `cudaFree` + ptr→size 映射表 | ★★★  | HAMi-core `allocator.c` `remove_chunk()` — 数组简化版          |
 
-### TODO 与模块 3 代码的对应关系
+### TODO 与参考代码的对应关系
 
-每个 TODO 都是模块 3 课上代码的**逐行翻译**：
+| 参考代码                    | 语言   | 功能                      | → TODO | 如何翻译                                    |
+| --------------------------- | ------ | ------------------------- | ------ | ------------------------------------------- |
+| `01_mymalloc.c:63-95`       | C      | `malloc` 拦截 + 配额      | TODO 1 | `cudaMalloc` — 函数签名不同、逻辑完全相同   |
+| `03_token_bucket.py:39-56`  | Python | `TokenBucket.acquire()`   | TODO 2 | 令牌桶变 C 全局变量 + `clock_gettime` 计时  |
+| HAMi-core `allocator.c:179` | C      | `remove_chunk()` 链表查删 | TODO 3 | 链表 → 固定数组 `alloc_table[256]` 线性搜索 |
 
-| 模块 3 代码                | 语言   | 功能                    | → TODO | C 语言对应                                 |
-| -------------------------- | ------ | ----------------------- | ------ | ------------------------------------------ |
-| `01_mymalloc.c:63-95`      | C      | `malloc` 拦截 + 配额    | TODO 1 | `cudaMalloc` — 函数签名不同、逻辑完全相同  |
-| `03_token_bucket.py:39-56` | Python | `TokenBucket.acquire()` | TODO 2 | 令牌桶变 C 全局变量 + `clock_gettime` 计时 |
-| `01_mymalloc.c:98-108`     | C      | `free` 简化拦截         | TODO 3 | `cudaFree` — 同样不跟踪释放大小            |
-
-骨架代码已提供完整的基础设施（`dim3` 类型、`launch_refill()` 函数、递归守卫、懒加载），学生只需填充 `// TODO` 注释区的 ~15 行代码。
+骨架代码已提供完整的基础设施（`dim3` 类型、`launch_refill()` 函数、`alloc_table[]` 数组、递归守卫、懒加载），学生需填充 `// TODO` 注释区的代码。
 
 ## 测试程序说明
 
@@ -148,11 +146,11 @@ void *malloc(size_t size) {
 
 如果在 constructor 里 `dlsym(RTLD_NEXT, "cudaMalloc")`，非 CUDA 程序（如 `ls`）会因找不到符号而 crash。懒加载意味着只有第一次真正调用 `cudaMalloc` 时才 resolve——非 CUDA 程序永远不触发，不会崩溃。
 
-### Q4: `cudaFree` 为什么不递减 `allocated_bytes`？
+### Q4: `cudaFree` 的 ptr→size 查表怎么做？
 
-`cudaFree` 的函数签名是 `cudaError_t cudaFree(void* devPtr)`——只传指针，不传大小。要精确跟踪已释放的字节数，需要维护一个指针到大小的映射表（Hash Table），这超出了本次作业的范围。
+`cudaFree(void* devPtr)` 只传指针不传大小。TODO 1 的 `cudaMalloc` 成功时已将 `(ptr, size)` 存入 `alloc_table[]`——你需要在这里遍历数组找到匹配的 `devPtr`，取出 size，从 `allocated_bytes` 中扣除，并将该条目从表中移除。
 
-与模块 3 `01_mymalloc.c` 的 `free()` 一样，采用"只记录释放事件"的简化方案。
+删除时不必保持顺序——想想最简单的做法。这和 HAMi-core `allocator.c` 里 `remove_chunk()` 用链表实现的是同一个概念。
 
 ### Q5: CUDA context 占用显存，配额设太小会怎样？
 
