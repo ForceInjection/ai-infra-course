@@ -32,7 +32,7 @@
 | ------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------ |
 | [KV Cache 公式 — 每个参数的物理来源](visuals/kv-cache-formula.html) | 公式 `2×L×H_kv×D×T×B` 逐参数拆解 + 示例计算  | 讲解 KV Cache 显存公式时打开，逐项理解参数来源   |
 | [KV Cache 三维张量形状](visuals/kv-cache-tensor.html)               | 一个 token 的 K/V 张量 [L, H_kv, D] + 精度 B | 讲解张量形状时打开，直观理解 L/H_kv/D/B 如何构成 |
-| [常见精度对比](visuals/kv-cache-precision.html)                      | FP16/FP8/INT8/INT4 的字节数与 KV Cache 影响  | 讲解量化压缩时打开，对比不同精度下的显存节省        |
+| [常见精度对比](visuals/kv-cache-precision.html)                     | FP16/FP8/INT8/INT4 的字节数与 KV Cache 影响  | 讲解量化压缩时打开，对比不同精度下的显存节省     |
 
 ## 与模块 5 的边界
 
