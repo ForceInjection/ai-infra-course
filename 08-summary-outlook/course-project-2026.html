@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>课程大作业：编写一个 GPU 资源拦截器</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; line-height:1.7; padding:24px 0; }
+.container { max-width:900px; margin:0 auto; padding:0 24px; }
+h1 { font-size:1.6em; color:#F8F6FB; text-align:center; margin-bottom:6px; }
+.subtitle { text-align:center; font-size:0.8em; color:#8A7BB5; margin-bottom:24px; }
+h2 { font-size:1.15em; color:#F8F6FB; margin:28px 0 12px; padding-bottom:6px; border-bottom:1px solid #432879; }
+h3 { font-size:0.95em; color:#fbbf24; margin:16px 0 8px; }
+p, li { font-size:0.82em; margin-bottom:6px; }
+ul, ol { padding-left:20px; margin-bottom:10px; }
+li { margin-bottom:3px; }
+a { color:#0F9ED5; }
+blockquote { border-left:3px solid #fbbf24; padding:8px 14px; margin:10px 0; background:#0E2841; border-radius:0 6px 6px 0; font-size:0.78em; color:#C8BEE0; }
+code { background:#0E2841; padding:1px 5px; border-radius:3px; font-size:0.9em; color:#4ade80; }
+pre { background:#0E2841; padding:12px 16px; border-radius:6px; overflow-x:auto; margin:8px 0; font-size:0.75em; line-height:1.5; }
+pre code { background:none; padding:0; }
+table { width:100%; border-collapse:collapse; margin:10px 0; font-size:0.78em; }
+th { background:#0E2841; padding:8px 12px; text-align:left; color:#8A7BB5; font-weight:bold; }
+td { padding:8px 12px; border-bottom:1px solid #432879; }
+.box { background:#231440; border:1px solid #432879; border-radius:8px; padding:14px 18px; margin:12px 0; }
+.highlight { color:#fbbf24; }
+hr { border:none; border-top:1px solid #432879; margin:20px 0; }
+.star { color:#fbbf24; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>课程大作业：编写一个 GPU 资源拦截器</h1>
+<p class="subtitle">云原生 AI 基础设施 · 2026 年春季学期</p>
+
+<h2>一、你要做什么</h2>
+
+<p>用 LD_PRELOAD 技术写一个共享库 <code>libcuda_hook.so</code>，拦截 CUDA 程序的 GPU 调用，实现两个功能：</p>
+<ol>
+  <li><b>显存配额</b> — 限制程序最多能用多少 MB 显存，超了就报错</li>
+  <li><b>算力限速</b> — 用令牌桶控制程序每秒最多启动几次 GPU Kernel</li>
+</ol>
+
+<p>做完之后，运行我们提供的测试程序，你的 Hook 应该能让它：</p>
+<ul>
+  <li>64MB 显存分配成功，2048MB 被拒绝</li>
+  <li>连续 10 个 Kernel 只有前 3 个通过（burst），后面全部被限速拒绝</li>
+</ul>
+
+<blockquote>
+<b>为什么拦截 Runtime API (<code>cudaMalloc</code>) 而不是 Driver API (<code>cuMemAlloc_v2</code>)？</b><br><br>
+HAMi-core 拦截的是更底层的 CUDA Driver API（<code>cu*</code> 函数），但我们选了 Runtime API（<code>cuda*</code> 函数），是一个有意为之的简化。<br><br>
+模块 3 的 <code>01_mymalloc.c</code> 拦截 <code>malloc(void*, size_t)</code>，而 <code>cudaMalloc</code> 的签名是 <code>cudaMalloc(void**, size_t)</code>——几乎一样，一行翻译。<code>cuMemAlloc_v2(CUdeviceptr*, size_t)</code> 则需要额外引入 <code>CUdeviceptr</code>、<code>CUresult</code>、<code>cuInit</code> 等新概念，分散了对核心模式（Hook → 检查 → 转发）的注意力。测试程序也会从三行变成十几行样板代码。<br><br>
+Runtime API 底层就是调 Driver API——HAMi-core 的做法和你写的只是<b>拦截的层级不同，模式完全一样</b>。做完作业再看延伸阅读，一眼就能看懂。
+</blockquote>
+
+<hr>
+
+<h2>二、脚手架</h2>
+
+<p>所有文件在 <a href="code/gpu-hook/"><code>gpu-hook/</code></a>：</p>
+
+<table>
+  <tr><th>文件</th><th>你要做什么</th></tr>
+  <tr><td><a href="code/gpu-hook/cuda_hook.c"><code>cuda_hook.c</code></a></td><td><b>搜索 <code>TODO</code>，填代码</b></td></tr>
+  <tr><td><a href="code/gpu-hook/test_hook.cu"><code>test_hook.cu</code></a></td><td>不用改，用来验证你的 Hook</td></tr>
+  <tr><td><a href="code/gpu-hook/Makefile"><code>Makefile</code></a></td><td><code>make</code> 编译 Hook，<code>make test-gpu</code> 跑测试</td></tr>
+</table>
+
+<h3>TODO 地图</h3>
+
+<p>打开 <code>cuda_hook.c</code>，找到这三处 <code>TODO</code>：</p>
+
+<table>
+  <tr><th>位置</th><th>做什么</th><th>抄哪里</th><th>难度</th></tr>
+  <tr>
+    <td><code>TODO 1: cudaMalloc</code></td>
+    <td>配额检查 + 调用原始函数 + 日志</td>
+    <td><a href="../03-gpu-virtualization/code/01_mymalloc.c"><code>01_mymalloc.c:63-95</code></a></td>
+    <td><span class="star">★★</span></td>
+  </tr>
+  <tr>
+    <td><code>TODO 2: cudaLaunchKernel</code></td>
+    <td>令牌桶检查 + 转发 + 记录维度</td>
+    <td><a href="../03-gpu-virtualization/code/03_token_bucket.py"><code>03_token_bucket.py:39-56</code></a></td>
+    <td><span class="star">★★★</span></td>
+  </tr>
+  <tr>
+    <td><code>TODO 3: cudaFree</code> (选做)</td>
+    <td>ptr→size 映射表 + 精确跟踪释放</td>
+    <td>HAMi-core <a href="https://github.com/Project-HAMi/HAMi-core/blob/main/src/allocator/allocator.c"><code>allocator.c:179</code></a> <code>remove_chunk()</code> — 数组简化版</td>
+    <td><span class="star">★★★</span></td>
+  </tr>
+</table>
+
+<blockquote>
+更多细节（预期输出、FAQ）见 <a href="code/gpu-hook/README.md"><code>gpu-hook/README.md</code></a>。<br>
+预计完成时间：<b>3-6 小时</b>（TODO 1: 30 分钟，TODO 2: 1 小时，TODO 3: 1-2 小时，实验分析: 1-2 小时）。
+</blockquote>
+
+<hr>
+
+<h2>三、评分标准</h2>
+
+<table>
+  <tr><th>维度</th><th>权重</th><th>满分长什么样</th></tr>
+  <tr>
+    <td><code>cudaMalloc</code> 拦截</td><td>35%</td>
+    <td>配额检查正确，超限返回 <code>cudaErrorMemoryAllocation</code>，日志 + 映射表写入</td>
+  </tr>
+  <tr>
+    <td><code>cudaLaunchKernel</code> 拦截</td><td>30%</td>
+    <td>令牌桶逻辑正确，burst 耗尽后拒绝，refill 后恢复，Grid/Block 维度日志正确</td>
+  </tr>
+  <tr>
+    <td><code>cudaFree</code> 映射表</td><td>10%</td>
+    <td>ptr→size 查表正确，精确递减 allocated_bytes，条目删除无误</td>
+  </tr>
+  <tr>
+    <td>实验日志 + 分析</td><td>15%</td>
+    <td>跑出 hook 日志，用 Python 统计拦截次数并画出时间线</td>
+  </tr>
+  <tr>
+    <td>README + 代码可运行</td><td>10%</td>
+    <td><code>make && make test-gpu</code> 一键跑通，有简要说明</td>
+  </tr>
+</table>
+
+<blockquote>TODO 1 + TODO 2 做到满分 = 75 分。TODO 3 完成再加 10 分。三个全做好 = 85 + 实验日志 15 = 100。</blockquote>
+
+<hr>
+
+<h2>四、提交</h2>
+
+<ol>
+  <li><b>代码</b>: <code>cuda_hook.c</code> + 其他你认为需要的文件，确保 <code>make && make test-gpu</code> 能跑通</li>
+  <li><b>实验日志</b>: <code>hook.log</code> — <code>make test-gpu 2> hook.log</code> 的输出</li>
+  <li><b>分析脚本 + 结果</b>: Python 脚本 + 跑出来的统计结果或图表，至少回答：
+    <ul>
+      <li>一共拦截了多少次 <code>cudaMalloc</code>？多少被拒绝？</li>
+      <li><code>cudaLaunchKernel</code> 的令牌数随时间怎么变化？（从 <code>hook.log</code> 提取 <code>tokens=</code> 画折线图；matplotlib / Excel / 手绘截屏都行，能用就行）</li>
+    </ul>
+  </li>
+  <li><b>README</b>: 一句话说怎么跑 + 你遇到的问题（如果有）</li>
+</ol>
+
+<p>打包成 <code>学号_姓名.zip</code>，发送到 <a href="mailto:wang.tianqing.cn@outlook.com">wang.tianqing.cn@outlook.com</a>。</p>
+
+<div class="box">
+  <b>截止时间</b>: 2026 年 7 月 31 日
+</div>
+
+<hr>
+
+<h2>五、会踩的坑（FAQ）</h2>
+
+<h3>1. 编译 test_hook 必须加 <code>--cudart=shared</code></h3>
+<p>nvcc 默认把 CUDA 库静态链接进程序——这会让 LD_PRELOAD 失效（符号已在编译时写死，运行时不会走你的 Hook）。Makefile 已经帮你加了这个参数，手动编译的话注意别漏掉。</p>
+<p>验证：<code>ldd test_hook | grep cuda</code>，应该看到 <code>libcudart.so.12 => ...</code>。</p>
+
+<h3>2. 不要在 constructor 里 resolve CUDA 符号</h3>
+<p>骨架代码用的是<b>懒加载</b>——第一次调用 <code>cudaMalloc</code> 时才 <code>dlsym(RTLD_NEXT, "cudaMalloc")</code>。这和 <code>01_mymalloc.c</code> 的做法完全一致。如果改成 constructor 里 eager resolve，<code>ls</code> 这种非 CUDA 程序一加载 Hook 就会 crash。</p>
+
+<h3>3. CUDA context 会占用 ~200-300 MB 显存</h3>
+<p>第一次调用任何 CUDA API 时，驱动会自动创建 CUDA Context，这个 Context 本身就占显存。所以 <code>CUDA_MEM_QUOTA_MB</code> 不要设太小，建议 ≥ 256 MB。测试程序默认用 128 MB（小配额是为了更容易触发 DENIED），但 CUDA Context 的 ~200 MB 不计入你的 Hook 跟踪——你只跟踪程序自己调的 <code>cudaMalloc</code>。</p>
+
+<h3>4. <code>cudaFree</code> 的 ptr→size 查表怎么做？</h3>
+<p><code>cudaFree(void* devPtr)</code> 只传指针不传大小，所以需要在 TODO 1 的 <code>cudaMalloc</code> 成功时把 <code>(ptr, size)</code> 存进 <code>alloc_table[]</code>，TODO 3 的 <code>cudaFree</code> 用 <code>devPtr</code> 去表里线性搜索，找到对应的 size 后从 <code>allocated_bytes</code> 中减去，并将该条目从表中移除。删除时不必保持顺序——想想怎么最快地把一个元素从数组里拿掉。</p>
+
+<h3>5. Test 3 全被 DENIED 是正常的</h3>
+<p>Test 2 耗尽令牌桶后，Test 3 紧接着启动（没有 refill 间隔），此时令牌数 ≈ 0，三个 Kernel 都会被拒绝。这不影响 Test 3 的目的——验证 Hook 日志里 Grid/Block 维度的输出是否正确。</p>
+
+<h3>6. Hook 没生效？按这个顺序排查</h3>
+<p>如果 <code>make test-gpu</code> 跑完了但所有 kernel 都通过、没有任何 DENIED（或完全没有 <code>[HOOK]</code> 日志），按顺序检查：</p>
+<ol>
+  <li><b>stderr 有没有 <code>[HOOK] 显存配额...</code>？</b> 没有 → Hook 根本没加载。检查 <code>LD_PRELOAD</code> 路径是否正确、<code>.so</code> 是否编译成功。</li>
+  <li><b><code>ldd test_hook | grep cuda</code></b> → 应该看到 <code>libcudart.so.12</code>。没看到 → 编译时漏了 <code>--cudart=shared</code>（Makefile 已经帮你加了，手动编译的话注意）。</li>
+  <li><b>先不加配额跑一次</b>：<code>LD_PRELOAD=./libcuda_hook.so ./test_hook</code>（不设 <code>CUDA_MEM_QUOTA_MB</code>），确认 Hook 起码能记录日志、不崩溃。</li>
+  <li><b>再加配额验证拦截</b>：加上 <code>CUDA_MEM_QUOTA_MB=128 CUDA_CORE_RATE=5 CUDA_CORE_CAPACITY=3</code>，确认 DENIED 出现。</li>
+  <li>还是不行 → 检查 Hook 编译时有没有 warning（<code>gcc -Wall</code> 会提示未初始化的变量、类型不匹配等）。</li>
+</ol>
+
+<hr>
+
+<h2>六、延伸阅读</h2>
+
+<p>你写的 <code>cuda_hook.c</code> 拦截了 2 个 CUDA Runtime API（<code>cudaMalloc</code> + <code>cudaLaunchKernel</code>），约 15 行核心逻辑。工业级的 HAMi-core 拦截了 <b>100+ 个 CUDA Driver API</b> + <b>~20 个 NVML API</b>（<code>nvidia-smi</code> 依赖），核心代码约 2500 行。</p>
+
+<p>关键区别：你拦截的是 Runtime API（<code>cuda*</code>），HAMi-core 拦截的是更底层的 <b>Driver API</b>（<code>cu*</code>）。所有框架（PyTorch、TensorFlow、vLLM）最终都通过 Driver API 访问 GPU，所以在 Driver 层拦截一次，所有框架全部受控。你的 <code>cudaMalloc</code> 底层也是调 <code>cuMemAlloc_v2</code>。</p>
+
+<table>
+  <tr><th>分类</th><th>你做的</th><th>HAMi-core 对应</th><th>区别</th></tr>
+  <tr>
+    <td>显存分配</td><td><code>cudaMalloc</code></td>
+    <td><code>cuMemAlloc_v2</code>, <code>cuMemAllocManaged</code>, <code>cuMemAllocAsync</code> 等 30+</td>
+    <td>你只拦截一种分配方式，HAMi 堵住了所有入口</td>
+  </tr>
+  <tr>
+    <td>显存释放</td><td><code>cudaFree</code></td>
+    <td><code>cuMemFree_v2</code>, <code>cuMemFreeHost</code>, <code>cuMemFreeAsync</code></td>
+    <td>同上，且精确跟踪 ptr→size</td>
+  </tr>
+  <tr>
+    <td>算力限速</td><td><code>cudaLaunchKernel</code></td>
+    <td><code>cuLaunchKernel</code>, <code>cuLaunchKernelEx</code>, <code>cuLaunchCooperativeKernel</code>, <code>cuGraphLaunch</code></td>
+    <td>你的实现用令牌桶，HAMi 的多进程版用共享内存协调</td>
+  </tr>
+  <tr>
+    <td>设备伪造</td><td>—</td>
+    <td><code>cuDeviceGetCount</code>, <code>cuDeviceGetName</code>, <code>cuDeviceTotalMem_v2</code></td>
+    <td>让容器以为 GPU 数量、型号、显存大小都是自己独占的</td>
+  </tr>
+  <tr>
+    <td>Context 限制</td><td>—</td>
+    <td><code>cuCtxCreate_v2/v3/v4</code>, <code>cuCtxDestroy_v2</code></td>
+    <td>限制每容器能创建几个 CUDA Context</td>
+  </tr>
+  <tr>
+    <td>NVML 拦截</td><td>—</td>
+    <td><code>nvmlDeviceGetMemoryInfo</code>, <code>nvmlDeviceGetUtilizationRates</code> 等 ~20 个</td>
+    <td><code>nvidia-smi</code> 在容器内显示"该容器的"显存用量，而不是整卡</td>
+  </tr>
+</table>
+
+<p>还有一个你做了但 HAMi-core 比你更狠的设计：<b>连 <code>dlsym</code> 本身也被拦截了</b>。你的 Hook 用 <code>dlsym(RTLD_NEXT)</code> 拿原始函数指针——如果有恶意程序也调 <code>dlsym(RTLD_NEXT, "cuMemAlloc_v2")</code>，就能绕过 Hook 直接调原始函数。HAMi-core 把自己的 <code>dlsym</code> 也注入了符号表，任何 <code>dlsym</code> 调用都优先返回 Hook 版本的函数指针。</p>
+
+<p>→ <a href="https://github.com/Project-HAMi/HAMi-core">HAMi-core 源码</a> — 建议从 <code>src/cuda/hook.c</code>（函数注册表）和 <code>src/libvgpu.c</code>（dlsym 劫持入口）开始看。</p>
+
+<hr>
+
+<h2>七、如果你没有 GPU</h2>
+
+<p>把 <code>cudaMalloc</code> 换成 <code>malloc</code>、<code>cudaLaunchKernel</code> 换成一个普通函数调用，用模块 3 的 <code>01_mymalloc.c</code> + <code>03_token_bucket.py</code> 组合来验证拦截和限速逻辑。提交时说明你用的是无 GPU 方案。</p>
+
+</div>
+</body>
+</html>

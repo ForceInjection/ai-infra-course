@@ -1,5 +1,7 @@
 # 课程大作业：编写一个 GPU 资源拦截器
 
+> [HTML 展示版](course-project-2026.html) (适合课堂投影)
+
 ## 一、你要做什么
 
 用 LD_PRELOAD 技术写一个共享库 `libcuda_hook.so`，拦截 CUDA 程序的 GPU 调用，实现两个功能：
