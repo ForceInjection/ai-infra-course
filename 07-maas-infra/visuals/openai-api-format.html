@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenAI API 请求格式详解</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:10px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.15em; color:#F8F6FB; }
+.header .sub { font-size:0.6em; color:#8A7BB5; margin-top:2px; }
+.content { flex:1; min-height:0; display:flex; gap:10px; padding:0 14px 10px; max-width:1300px; width:100%; margin:0 auto; }
+
+.panel { flex:1; display:flex; flex-direction:column; gap:8px; min-width:0; overflow-y:auto; }
+.panel.right { width:400px; flex:0 0 400px; }
+.box { background:#231440; border:1px solid #432879; border-radius:8px; padding:12px 14px; }
+.box h3 { font-size:0.8em; color:#8A7BB5; margin-bottom:8px; }
+
+pre { font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; font-size:0.7em; line-height:1.6; color:#C8BEE0; white-space:pre-wrap; margin:0; }
+.json-key { color:#0F9ED5; }
+.json-str { color:#4ade80; }
+.json-num { color:#fbbf24; }
+.json-bool { color:#a855f7; }
+.json-null { color:#8A7BB5; }
+.json-comment { color:#E97132; font-style:italic; }
+
+.annotate { position:relative; }
+.annotate .line { display:flex; gap:8px; align-items:baseline; }
+.annotate .line .arrow { color:#E97132; flex-shrink:0; width:80px; text-align:right; font-size:0.6em; }
+.annotate .line .note { font-size:0.6em; color:#fbbf24; flex-shrink:0; width:200px; }
+
+.flow { display:flex; align-items:center; gap:6px; font-size:0.65em; color:#8A7BB5; flex-wrap:wrap; margin:8px 0; }
+.flow .step { background:#0E2841; padding:4px 10px; border-radius:4px; white-space:nowrap; }
+.flow .arrow { color:#E97132; font-weight:bold; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>OpenAI Chat Completions API — 请求与响应格式</h1>
+  <div class="sub">AI 网关对外暴露的标准接口 &nbsp;|&nbsp; <code style="color:#4ade80;">POST /v1/chat/completions</code> &nbsp;|&nbsp; 所有 OpenAI SDK 零修改兼容</div>
+</div>
+
+<div class="content">
+
+<!-- Left: Request -->
+<div class="panel">
+  <div class="box">
+    <h3>请求 (Request) — POST /v1/chat/completions</h3>
+    <div class="flow">
+      <span class="step">HTTP Header</span> <span class="arrow">→</span>
+      <span class="step">Request Body (JSON)</span> <span class="arrow">→</span>
+      <span class="step">网关转发到后端</span> <span class="arrow">→</span>
+      <span class="step">Response</span>
+    </div>
+  </div>
+
+  <div class="box annotate">
+    <h3>HTTP Headers <span style="font-weight:normal;font-size:0.7em;color:#8A7BB5;">— 网关从中提取认证和路由信息</span></h3>
+    <div class="line">
+      <span class="arrow">网关读取 →</span>
+      <span class="note">认证: 提取 API Key</span>
+      <code><span class="json-key">"Authorization"</span>: <span class="json-str">"Bearer test-key"</span></code>
+    </div>
+    <div class="line">
+      <span class="arrow">网关读取 →</span>
+      <span class="note">路由: Session-ID → Consistent Hash</span>
+      <code><span class="json-key">"X-Session-ID"</span>: <span class="json-str">"user-alice-001"</span></code>
+    </div>
+    <div class="line">
+      <span class="arrow">标准 →</span>
+      <span class="note"></span>
+      <code><span class="json-key">"Content-Type"</span>: <span class="json-str">"application/json"</span></code>
+    </div>
+  </div>
+
+  <div class="box annotate">
+    <h3>Request Body (JSON) <span style="font-weight:normal;font-size:0.7em;color:#8A7BB5;">— 每个字段的用途</span></h3>
+<pre>{
+  <span class="json-key">"model"</span>: <span class="json-str">"qwen2.5-7b"</span>,         <span class="json-comment">// ① 指定模型 — Semantic Router 用此选模型组</span>
+  <span class="json-key">"messages"</span>: [                       <span class="json-comment">// ② 对话历史 — 网关不解析，透传给后端</span>
+    {
+      <span class="json-key">"role"</span>: <span class="json-str">"system"</span>,                 <span class="json-comment">// system prompt — Prefix Cache 的 hash 来源!</span>
+      <span class="json-key">"content"</span>: <span class="json-str">"You are a helpful assistant."</span>
+    },
+    {
+      <span class="json-key">"role"</span>: <span class="json-str">"user"</span>,                   <span class="json-comment">// 用户输入 — Prefill 的计算量取决于这个</span>
+      <span class="json-key">"content"</span>: <span class="json-str">"你好，请介绍一下你自己"</span>
+    }
+  ],
+  <span class="json-key">"max_tokens"</span>: <span class="json-num">256</span>,                 <span class="json-comment">// ③ 最多生成 token 数 — 限流器据此预扣配额</span>
+  <span class="json-key">"temperature"</span>: <span class="json-num">0.7</span>,               <span class="json-comment">// ④ 随机性 — 0=确定性, 1=更随机</span>
+  <span class="json-key">"stream"</span>: <span class="json-bool">true</span>,                     <span class="json-comment">// ⑤ 是否流式返回 — true → SSE 逐 token 推送</span>
+  <span class="json-key">"stop"</span>: [<span class="json-str">"\n\n"</span>],                  <span class="json-comment">// ⑥ 停止条件 — 遇到此字符串停止生成</span>
+  <span class="json-key">"top_p"</span>: <span class="json-num">0.95</span>                      <span class="json-comment">// ⑦ nucleus sampling — 只考虑累积概率前 95% 的 token</span>
+}</pre>
+  </div>
+</div>
+
+<!-- Right: Response + Notes -->
+<div class="panel right">
+  <div class="box annotate">
+    <h3>非流式响应 (Response)</h3>
+<pre>{
+  <span class="json-key">"id"</span>: <span class="json-str">"chatcmpl-abc123"</span>,
+  <span class="json-key">"object"</span>: <span class="json-str">"chat.completion"</span>,
+  <span class="json-key">"created"</span>: <span class="json-num">1720000000</span>,
+  <span class="json-key">"model"</span>: <span class="json-str">"qwen2.5-7b"</span>,
+  <span class="json-key">"choices"</span>: [{
+    <span class="json-key">"index"</span>: <span class="json-num">0</span>,
+    <span class="json-key">"message"</span>: {
+      <span class="json-key">"role"</span>: <span class="json-str">"assistant"</span>,
+      <span class="json-key">"content"</span>: <span class="json-str">"你好！我是..."</span>
+    },
+    <span class="json-key">"finish_reason"</span>: <span class="json-str">"stop"</span>      <span class="json-comment">// "stop"=正常结束 "length"=达到max_tokens</span>
+  }],
+  <span class="json-key">"usage"</span>: {
+    <span class="json-key">"prompt_tokens"</span>: <span class="json-num">15</span>,          <span class="json-comment">// 输入 token 数 — 计费用</span>
+    <span class="json-key">"completion_tokens"</span>: <span class="json-num">42</span>,     <span class="json-comment">// 输出 token 数 — 计费用 (通常更贵)</span>
+    <span class="json-key">"total_tokens"</span>: <span class="json-num">57</span>           <span class="json-comment">// 总 token 消耗</span>
+  }
+}</pre>
+  </div>
+
+  <div class="box">
+    <h3>流式响应 (SSE — Server-Sent Events)</h3>
+    <div style="font-size:0.6em;color:#8A7BB5;line-height:1.6;margin-bottom:6px;">
+      当 <code style="color:#fbbf24;">stream: true</code> 时，后端逐 token 推送，每个 token 一个 SSE 事件：
+    </div>
+<pre><span style="color:#8A7BB5;">data:</span> {<span class="json-key">"choices"</span>:[{<span class="json-key">"delta"</span>:{<span class="json-key">"role"</span>:<span class="json-str">"assistant"</span>},<span class="json-key">"index"</span>:<span class="json-num">0</span>}]}
+
+<span style="color:#8A7BB5;">data:</span> {<span class="json-key">"choices"</span>:[{<span class="json-key">"delta"</span>:{<span class="json-key">"content"</span>:<span class="json-str">"你好"</span>},<span class="json-key">"index"</span>:<span class="json-num">0</span>}]}
+
+<span style="color:#8A7BB5;">data:</span> {<span class="json-key">"choices"</span>:[{<span class="json-key">"delta"</span>:{<span class="json-key">"content"</span>:<span class="json-str">"！"</span>},<span class="json-key">"index"</span>:<span class="json-num">0</span>}]}
+
+<span style="color:#8A7BB5;">data:</span> {<span class="json-key">"choices"</span>:[{<span class="json-key">"delta"</span>:{},<span class="json-key">"finish_reason"</span>:<span class="json-str">"stop"</span>}]}
+
+<span style="color:#8A7BB5;">data:</span> [DONE]</pre>
+  </div>
+
+  <div class="box">
+    <h3>网关如何处理这些字段</h3>
+    <div style="font-size:0.62em;line-height:1.8;">
+      <div><span style="color:#ef4444;">①</span> <span style="color:#fbbf24;">model</span> <span style="color:#8A7BB5;">→ Semantic Router 选模型组</span></div>
+      <div><span style="color:#ef4444;">②</span> <span style="color:#fbbf24;">messages[0].content</span> <span style="color:#8A7BB5;">→ system prompt hash → Consistent Hash → 固定 Worker</span></div>
+      <div><span style="color:#ef4444;">③</span> <span style="color:#fbbf24;">max_tokens</span> <span style="color:#8A7BB5;">→ Token Bucket 预扣配额 (input×1 + output×2)</span></div>
+      <div><span style="color:#ef4444;">⑤</span> <span style="color:#fbbf24;">stream</span> <span style="color:#8A7BB5;">→ 网关用</span> <code style="color:#4ade80;">stream=True</code> <span style="color:#8A7BB5;">转发，逐 chunk 返回</span></div>
+      <div><span style="color:#a855f7;">usage</span> <span style="color:#8A7BB5;">→ 计费系统读取，写审计日志</span></div>
+    </div>
+  </div>
+
+  <div class="box">
+    <h3>AI 网关的协议转换角色</h3>
+    <div style="font-size:0.62em;color:#8A7BB5;line-height:1.6;">
+      对外: 标准 OpenAI API (<code style="color:#4ade80;">/v1/chat/completions</code>)<br>
+      对内: 可转发到不同的后端协议 (vLLM/gRPC/其他)<br>
+      用户用 <code style="color:#0F9ED5;">openai</code> Python SDK → 零修改 → 享受 vLLM 高性能<br>
+      «用户无感知 — OpenAI SDK 直接可用，后端换什么都行»
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

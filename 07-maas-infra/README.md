@@ -1,6 +1,6 @@
 # 模块 7：从推理引擎到服务平台
 
-> 90 分钟 &nbsp;|&nbsp; 45 页 PPT &nbsp;|&nbsp; 1 个 Flask 网关 (Random + Consistent Hash) + 1 个 Mock 后端 + 4 个交互式 HTML
+> 90 分钟 &nbsp;|&nbsp; 45 页 PPT &nbsp;|&nbsp; 1 个 Flask 网关 (Random + Consistent Hash) + 1 个 Mock 后端 + 5 个交互式 HTML
 
 ## 目录结构
 
@@ -17,11 +17,12 @@
 │   ├── ai_gateway.py            #   Flask 简易 AI 网关 (PPT 第 42 页)
 │   ├── mock_vllm.py             #   vLLM Mock 后端 (无需 GPU，本地测试用)
 │   └── demo.sh                  #   一键启动/停止 (bash demo.sh start|stop)
-└── visuals/                        # 可视化 HTML (4 个)
+└── visuals/                        # 可视化 HTML (5 个)
     ├── gateway-pipeline.html       #   基础网关流水线: 认证·限流·路由·转发
     ├── ai-gateway-pipeline.html    #   AI 网关流水线: Semantic Router · Cache-Aware LB
     ├── consistent-hash.html        #   Consistent Hash: Hash Ring 交互演示
-    └── semantic-router.html        #   Semantic Router: 信号提取 → 模型决策
+    ├── semantic-router.html        #   Semantic Router: 信号提取 → 模型决策
+    └── openai-api-format.html      #   OpenAI API 请求/响应格式详解
 ```
 
 ## 可视化 HTML
@@ -32,6 +33,7 @@
 | [AI 网关推理流水线](visuals/ai-gateway-pipeline.html) | Semantic Router 模型路由 + Cache-Aware LB + 令牌桶 + KV Cache 亲和性 | 深入讲解 vLLM Router：切换 LB 策略对比、请求类型→模型路由、Cache 热度驱动 Worker 选择 |
 | [Consistent Hash](visuals/consistent-hash.html) | Hash Ring + 虚拟节点 + 节点增删时的 key 重映射 | 辅助可视化 (简化版)，配合下方文字说明使用 |
 | [Semantic Router](visuals/semantic-router.html) | Shannon 两层模型: 信号提取 (信息论) → 布尔决策 (开关电路) | 讲解 Semantic Router 时打开：输入查询，观察信号提取和模型选择决策 |
+| [OpenAI API 格式](visuals/openai-api-format.html) | 请求/响应 JSON 结构 + 流式 SSE 格式 + 网关字段映射 | 讲解 OpenAI 兼容协议时打开：逐字段标注用途，理解网关如何利用每个字段 |
 
 **AI 网关交互方式**: 下拉选择请求类型 («写代码»/«翻译»/«聊天») → Semantic Router 自动选模型；切换 LB 策略 (Random / Consistent Hash / Cache-Aware) 观察 Worker 选择变化；Worker Cache 热度动态变化 (命中→升温，未命中→降温)。
 
