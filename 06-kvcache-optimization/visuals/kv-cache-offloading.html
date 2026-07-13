@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KV Cache Offloading — 存储层次与块交换</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:10px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.15em; color:#F8F6FB; }
+.header .sub { font-size:0.6em; color:#8A7BB5; margin-top:2px; }
+.content { flex:1; min-height:0; display:flex; gap:10px; padding:0 14px 10px; max-width:1200px; width:100%; margin:0 auto; }
+.main { flex:1; display:flex; flex-direction:column; gap:8px; min-width:0; }
+.side { width:320px; flex-shrink:0; display:flex; flex-direction:column; gap:8px; overflow-y:auto; }
+.box { background:#231440; border:1px solid #432879; border-radius:8px; padding:10px 12px; }
+.box h3 { font-size:0.75em; color:#8A7BB5; margin-bottom:6px; }
+.btn { padding:6px 14px; border:none; border-radius:6px; font-size:0.72em; cursor:pointer; font-weight:bold; font-family:inherit; }
+.btn:hover { filter:brightness(1.2); }
+.btn-fill { background:#156082; color:#F8F6FB; }
+.btn-evict { background:#E97132; color:#F8F6FB; }
+.btn-reset { background:#432879; color:#F8F6FB; }
+.controls { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
+
+/* Tiers */
+.tier { display:flex; align-items:center; gap:12px; padding:10px 14px; border-radius:8px; margin:4px 0; min-height:56px; transition:all 0.3s; }
+.tier.active { box-shadow:0 0 12px rgba(251,191,36,0.2); }
+.tier.hbm { background:#0E2841; border:2px solid #ef4444; }
+.tier.cpu { background:#231440; border:2px solid #f97316; }
+.tier.nvme { background:#231440; border:2px solid #a855f7; }
+.tier .label { width:100px; flex-shrink:0; }
+.tier .label .name { font-size:0.85em; font-weight:bold; }
+.tier .label .speed { font-size:0.55em; color:#8A7BB5; margin-top:2px; }
+.tier .label .cost { font-size:0.55em; color:#8A7BB5; }
+.tier.hbm .name { color:#ef4444; }
+.tier.cpu .name { color:#f97316; }
+.tier.nvme .name { color:#a855f7; }
+.tier .blocks { flex:1; display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+.block { width:28px; height:28px; border-radius:4px; font-size:0.5em; display:flex; align-items:center; justify-content:center; color:#1A0F2E; font-weight:bold; transition:all 0.3s; }
+.block.hot { background:#ef4444; }
+.block.warm { background:#f97316; }
+.block.cold { background:#a855f7; }
+.block.moving { animation: pulse 0.6s ease-in-out; }
+@keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.3)} }
+.tier .empty { font-size:0.6em; color:#432879; }
+
+.log { font-family:monospace; font-size:0.65em; line-height:1.6; max-height:200px; overflow-y:auto; flex:1; }
+.log .entry { padding:1px 0; border-bottom:1px solid #43287950; }
+.log .hot { color:#ef4444; }
+.log .warm { color:#f97316; }
+.log .cold { color:#a855f7; }
+.log .evict { color:#fbbf24; }
+
+.compare-table { width:100%; font-size:0.65em; border-collapse:collapse; }
+.compare-table td, .compare-table th { padding:4px 8px; border-bottom:1px solid #432879; text-align:center; }
+.compare-table th { color:#8A7BB5; font-weight:normal; }
+.compare-table .winner { color:#4ade80; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>KV Cache Offloading — 存储层次与块交换</h1>
+  <div class="sub">nano-vllm 真实行为: preempt 时 swap-out 到 CPU → decode 时空闲 swap-in 回 GPU &nbsp;|&nbsp; 教学演示</div>
+</div>
+
+<div class="content">
+<div class="main">
+  <div class="box" style="flex:1;display:flex;flex-direction:column;">
+    <div class="controls">
+      <button class="btn btn-fill" onclick="sendRequest()">+ 新请求 (分配 Block)</button>
+      <button class="btn btn-evict" onclick="freeBlocks()">释放 Block (触发 Swap-In)</button>
+      <button class="btn btn-reset" onclick="resetAll()">重置</button>
+    </div>
+
+    <div class="tier hbm" id="tier-hbm">
+      <div class="label"><div class="name">GPU HBM</div><div class="speed">1-3 TB/s | ~80 GB</div><div class="cost">$15/GB</div></div>
+      <div class="blocks" id="blocks-hbm"></div>
+    </div>
+
+    <div class="tier cpu" id="tier-cpu">
+      <div class="label"><div class="name">CPU DRAM <span style="font-size:0.7em;color:#a855f7;">(swapped seq blocks)</span></div><div class="speed">50-100 GB/s | ~512 GB</div><div class="cost">$3/GB</div></div>
+      <div class="blocks" id="blocks-cpu"></div>
+    </div>
+
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<div class="side">
+  <div class="box">
+    <h3>nano-vllm swap 机制</h3>
+    <div style="font-size:0.62em;line-height:1.7;">
+      <span style="color:#ef4444;font-weight:bold;">● PREEMPT</span> <span style="color:#8A7BB5;">— HBM 满时 scheduler 选一个 seq</span><br>
+      <span style="color:#8A7BB5;">→</span> <code style="color:#fbbf24;">can_swap_out(seq)</code> <span style="color:#8A7BB5;">: ref_count==1 ?</span><br>
+      <span style="color:#8A7BB5;">→</span> <span style="color:#4ade80;">是</span> <span style="color:#8A7BB5;">→</span> <code style="color:#f97316;">swap_out</code> <span style="color:#8A7BB5;">: 整序列 block 搬到</span> <span style="color:#f97316;font-weight:bold;">CPU</span><br>
+      <span style="color:#8A7BB5;">→</span> <span style="color:#ef4444;">否</span> <span style="color:#8A7BB5;">(</span><span style="color:#fbbf24;">SHARED block</span><span style="color:#8A7BB5;">) → recompute preempt</span><br>
+      <span style="color:#8A7BB5;font-size:0.9em;">&nbsp;&nbsp;&nbsp;丢弃 KV → 重算 Prefill</span> <span style="color:#E97132;">~200ms</span><br><br>
+      <span style="color:#4ade80;font-weight:bold;">● SWAP-IN</span> <span style="color:#8A7BB5;">— decode 阶段 GPU block 空闲时</span><br>
+      <span style="color:#8A7BB5;">→</span> <code style="color:#fbbf24;">can_swap_in(seq)</code> <span style="color:#8A7BB5;">: CPU 有空闲 block?</span><br>
+      <span style="color:#8A7BB5;">→</span> <code style="color:#f97316;">swap_in</code> <span style="color:#8A7BB5;">: CPU block</span> <span style="color:#4ade80;">拷回 GPU</span><br>
+      <span style="color:#8A7BB5;">→ 序列恢复, 继续 decode</span><br><br>
+      <span style="color:#fbbf24;font-weight:bold;">核心权衡</span><br>
+      <span style="color:#8A7BB5;">swap ~100μs</span> <span style="color:#4ade80;">&lt;&lt;</span> <span style="color:#E97132;">recompute ~200ms</span> <span style="color:#8A7BB5;">→ 省 ~2000×</span><br>
+      <span style="color:#8A7BB5;">但</span> <span style="color:#fbbf24;">ref_count>1</span> <span style="color:#8A7BB5;">的共享 block 不能 swap</span>
+    </div>
+  </div>
+
+  <div class="box">
+    <h3>nano-vllm vs vLLM</h3>
+    <div style="font-size:0.62em;line-height:1.7;">
+      <span style="color:#ef4444;font-weight:bold;">nano-vllm</span> <span style="color:#8A7BB5;">—</span> <span style="color:#ef4444;">GPU</span> <span style="color:#8A7BB5;">↔</span> <span style="color:#f97316;">CPU</span> <span style="color:#8A7BB5;">两层</span><br>
+      <span style="color:#8A7BB5;">BlockManager.swapped_block_tables</span><br>
+      <span style="color:#8A7BB5;">kv_swap.swap_blocks (copy_)</span><br><br>
+      <span style="color:#a855f7;font-weight:bold;">vLLM</span> <span style="color:#8A7BB5;">—</span> <span style="color:#ef4444;">GPU</span> <span style="color:#8A7BB5;">↔</span> <span style="color:#f97316;">CPU</span> <span style="color:#8A7BB5;">↔</span> <span style="color:#a855f7;">NVMe</span> <span style="color:#8A7BB5;">三层</span><br>
+      <code style="color:#a855f7;">--cpu-offload-gb 64</code><br>
+      <code style="color:#a855f7;">--swap-space 4</code> <span style="color:#8A7BB5;">(NVMe)</span><br>
+      <span style="color:#8A7BB5;">LRU eviction + 自动 swap</span>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// seqs: [{id, blocks: [blockId, ...], swapped: false, shared: false, color: '#xxx'}]
+let seqs = [];
+let nextSeqId = 1;
+let nextBlockId = 1;
+const HBM_LIMIT = 12;
+const SEQ_COLORS = ['#ef4444','#3b82f6','#22c55e','#a855f7','#f97316','#06b6d4','#ec4899','#fbbf24'];
+let seqColorIdx = 0;
+
+function nextSeqColor() {
+    const c = SEQ_COLORS[seqColorIdx % SEQ_COLORS.length];
+    seqColorIdx++;
+    return c;
+}
+
+function allBlocks() {
+    const result = [];
+    seqs.forEach(s => {
+        const tier = s.swapped ? 'cpu' : 'hbm';
+        s.blocks.forEach(bid => result.push({ id: bid, tier, seq: s.id, color: s.color, shared: s.shared }));
+    });
+    return result;
+}
+
+function draw() {
+    const blks = allBlocks();
+    ['hbm','cpu'].forEach(tier => {
+        const div = document.getElementById(`blocks-${tier}`);
+        const tierBlocks = blks.filter(b => b.tier === tier);
+        if (tierBlocks.length === 0) {
+            div.innerHTML = '<span class="empty">空</span>';
+        } else {
+            div.innerHTML = tierBlocks.map(b => {
+                const border = b.shared ? 'border: 2px solid #fbbf24; box-shadow: 0 0 4px #fbbf24;' : '';
+                const opacity = tier === 'cpu' ? 'opacity:0.6;' : '';
+                return `<div class="block moving" style="background:${b.color};${border}${opacity}" title="Block #${b.id} | Seq #${b.seq}${b.shared?' | SHARED':''}">#${b.id}</div>`;
+            }).join('');
+        }
+    });
+    setTimeout(() => {
+        document.querySelectorAll('.block.moving').forEach(el => el.classList.remove('moving'));
+    }, 600);
+}
+
+function addLog(msg) {
+    const log = document.getElementById('log');
+    const entry = document.createElement('div');
+    entry.className = 'entry';
+    entry.innerHTML = msg;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+}
+
+function sendRequest() {
+    const blocksNeeded = Math.floor(Math.random() * 3) + 2; // 2-4 blocks per seq
+    const newBlocks = [];
+    for (let i = 0; i < blocksNeeded; i++) newBlocks.push(nextBlockId++);
+    const shared = Math.random() < 0.25; // 25% chance shared blocks
+    seqs.push({ id: nextSeqId++, blocks: newBlocks, swapped: false, shared, color: nextSeqColor() });
+    addLog(`<span class="hot">Seq #${nextSeqId-1}</span>: ${blocksNeeded} blocks → HBM${shared ? ' <span style=\"color:#fbbf24\">[SHARED]</span>' : ''}`);
+    highlight('hbm');
+
+    // Check HBM overflow → preempt
+    const hbmCount = allBlocks().filter(b => b.tier === 'hbm').length;
+    if (hbmCount > HBM_LIMIT) {
+        preemptSeq();
+    }
+    draw();
+}
+
+function preemptSeq() {
+    // Pick a non-shared seq to preempt (shared can't be swapped)
+    const candidates = seqs.filter(s => !s.swapped && !s.shared);
+    if (candidates.length === 0) {
+        // All are shared → recompute preempt (discard, no swap)
+        const victim = seqs.find(s => !s.swapped);
+        if (!victim) return;
+        addLog(`<span class="evict">PREEMPT</span> Seq #${victim.id}: RECOMPUTE (shared blocks, can't swap — KV Cache discarded, must re-Prefill ~200ms)`, 'evict');
+        // Simulate recompute: blocks stay in HBM but seq is marked as "re-preempted"
+        victim.swapped = true;
+        victim.blocks = []; // discarded
+        highlight('hbm');
+        return;
+    }
+    const victim = candidates[0];
+    addLog(`<span class="evict">PREEMPT</span> Seq #${victim.id}: can_swap_out → ${victim.blocks.length} blocks SWAP-OUT to CPU (~100μs)`, 'evict');
+    victim.swapped = true;
+    highlight('cpu');
+}
+
+function freeBlocks() {
+    // Find a swapped seq and swap it back in
+    const swapped = seqs.find(s => s.swapped && s.blocks.length > 0);
+    if (swapped) {
+        addLog(`<span class="warm">SWAP-IN</span> Seq #${swapped.id}: ${swapped.blocks.length} blocks CPU → GPU (~100μs) — 恢复 decode`);
+        swapped.swapped = false;
+        highlight('hbm');
+    } else {
+        // Free some HBM blocks by completing a seq
+        const running = seqs.find(s => !s.swapped);
+        if (running) {
+            addLog(`Seq #${running.id} 完成 → 释放 ${running.blocks.length} 个 block`);
+            seqs = seqs.filter(s => s.id !== running.id);
+            // Try swap-in for any remaining swapped seqs
+            const remaining = seqs.find(s => s.swapped && s.blocks.length > 0);
+            if (remaining) {
+                addLog(`<span class="warm">SWAP-IN</span> Seq #${remaining.id}: ${remaining.blocks.length} blocks CPU → GPU`);
+                remaining.swapped = false;
+                highlight('hbm');
+            }
+        }
+    }
+    draw();
+}
+
+function highlight(tier) {
+    const el = document.getElementById(`tier-${tier}`);
+    el.classList.add('active');
+    setTimeout(() => el.classList.remove('active'), 500);
+}
+
+function resetAll() {
+    seqs = []; nextSeqId = 1; nextBlockId = 1; seqColorIdx = 0;
+    document.getElementById('log').innerHTML = '';
+    // Pre-populate with colored seqs
+    seqs.push({ id: nextSeqId++, blocks: [1,2,3], swapped: false, shared: false, color: nextSeqColor() });
+    seqs.push({ id: nextSeqId++, blocks: [4,5], swapped: false, shared: false, color: nextSeqColor() });
+    seqs.push({ id: nextSeqId++, blocks: [6,7], swapped: false, shared: false, color: nextSeqColor() });
+    seqs.push({ id: nextSeqId++, blocks: [8,9], swapped: true, shared: false, color: nextSeqColor() }); // swapped
+    nextBlockId = 10;
+    draw();
+}
+
+resetAll();
+</script>
+</body>
+</html>
