@@ -66,8 +66,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; backg
 <body>
 
 <div class="header">
-  <h1>AI 网关 — 请求处理流水线</h1>
-  <div class="sub">认证 → 限流 (Token Bucket) → 模型路由 → 转发推理 &nbsp;|&nbsp; 点击模型节点切换健康状态</div>
+  <h1>网关 — 请求处理流水线</h1>
+  <div class="sub">认证 → 限流 (Token Bucket) → 加权路由 → 转发 &nbsp;|&nbsp; 点击后端节点切换健康状态</div>
 </div>
 
 <div class="content">
@@ -98,12 +98,12 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; backg
     </div>
     <div class="stage" id="stage-route">
       <div class="num">③</div>
-      <div class="label">模型路由</div>
+      <div class="label">加权随机路由</div>
       <div class="detail" id="route-detail">—</div>
     </div>
     <div class="stage" id="stage-fwd">
       <div class="num">④</div>
-      <div class="label">转发推理</div>
+      <div class="label">转发</div>
       <div class="detail" id="fwd-detail">—</div>
     </div>
   </div>
@@ -118,19 +118,16 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; backg
 <!-- Right: backends + quick start -->
 <div class="right-panel">
   <div class="box">
-    <h3>模型节点 <span style="font-size:0.6em;color:#8A7BB5;">(点击模拟宕机)</span></h3>
+    <h3>后端节点 <span style="font-size:0.6em;color:#8A7BB5;">(点击模拟宕机)</span></h3>
     <div class="backend" id="be-8001" onclick="toggleBackend(8001)">
       <div class="dot on" id="dot-8001"></div>
-      <span class="name">Qwen2.5-7B</span>
+      <span class="name">Backend :8001</span>
       <span class="hits" id="hits-8001">0 hits</span>
     </div>
     <div class="backend" id="be-8002" onclick="toggleBackend(8002)">
       <div class="dot on" id="dot-8002"></div>
-      <span class="name">Llama-3-8B</span>
+      <span class="name">Backend :8002</span>
       <span class="hits" id="hits-8002">0 hits</span>
-    </div>
-    <div style="font-size:0.55em;color:#432879;margin-top:4px;line-height:1.4;">
-      同模型可部署多副本 →<br>Cache-Aware LB 优先路由到<br>已缓存 KV Cache 的副本
     </div>
   </div>
 
@@ -194,9 +191,6 @@ const backends = {
 
 let totalReqs = 0;
 let stat200 = 0, stat429 = 0, stat503 = 0;
-let totalTokens = 0;
-
-const modelNames = { 8001: 'Qwen2.5-7B', 8002: 'Llama-3-8B' };
 
 // ── Simulate one request through the pipeline ──
 function processRequest() {
@@ -246,13 +240,10 @@ function processRequest() {
         result = { code: 429, label: '429 限流', cls: 'warn' };
         stat429++;
     } else if (!backend) {
-        result = { code: 503, label: '503 模型全宕', cls: 'fail' };
+        result = { code: 503, label: '503 后端全挂', cls: 'fail' };
         stat503++;
     } else {
-        const model = modelNames[backend];
-        const tokens = Math.floor(Math.random() * 300 + 50); // 模拟 token 消耗
-        totalTokens += tokens;
-        result = { code: 200, label: `200 (→ ${model})`, cls: 'ok', tokens: tokens };
+        result = { code: 200, label: `200 (→ :${backend})`, cls: 'ok' };
         stat200++;
     }
     highlight('stage-fwd', result.code === 200 ? 'active' : 'reject');
@@ -261,16 +252,15 @@ function processRequest() {
     // Log
     const entry = document.createElement('div');
     entry.className = 'entry';
-    const modelStr = backend ? modelNames[backend] : '—';
-    const tokenStr = result.tokens ? ` <span class="ts">${result.tokens} tokens</span>` : '';
+    const beStr = backend ? `:${backend}` : '—';
     entry.innerHTML = `<span class="ts">${ts}</span> req#${totalReqs} → `
         + `认证<span class="ok">✓</span> → `
         + (rateResult.ok
             ? `令牌<span class="ok">${(rateResult.tokens+1).toFixed(1)}→${rateResult.tokens.toFixed(1)}</span>`
             : `令牌<span class="warn">BLOCKED</span>`)
         + ` → `
-        + (backend ? `${modelStr}` : `—`)
-        + ` → <span class="${result.cls}">${result.label}</span>${tokenStr}`;
+        + (backend ? `${beStr}` : `—`)
+        + ` → <span class="${result.cls}">${result.label}</span>`;
     const log = document.getElementById('log');
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;
@@ -281,7 +271,7 @@ function processRequest() {
     document.getElementById('stat-200').textContent = stat200;
     document.getElementById('stat-429').textContent = stat429;
     document.getElementById('stat-503').textContent = stat503;
-    document.getElementById('stat-tokens').textContent = totalTokens;
+;
 
     updateBucketUI();
     updateRouteUI(backend);
@@ -312,7 +302,7 @@ function updateBucketUI() {
 }
 function updateRouteUI(backend) {
     document.getElementById('route-detail').textContent =
-        backend ? `→ ${modelNames[backend]}` : '无可用模型';
+        backend ? `选中 :${backend}` : '无可用后端';
 }
 function updateFwdUI(result) {
     document.getElementById('fwd-detail').textContent = result.label;
@@ -350,14 +340,12 @@ function resetAll() {
     backends[8001] = { healthy: true, hits: 0 };
     backends[8002] = { healthy: true, hits: 0 };
     totalReqs = stat200 = stat429 = stat503 = 0;
-    totalTokens = 0;
     document.getElementById('log').innerHTML = '';
     document.getElementById('log-count').textContent = '0 条';
     document.getElementById('stat-total').textContent = '0';
     document.getElementById('stat-200').textContent = '0';
     document.getElementById('stat-429').textContent = '0';
     document.getElementById('stat-503').textContent = '0';
-    document.getElementById('stat-tokens').textContent = '0';
     updateBucketUI();
     updateRouteUI(null);
     updateFwdUI({label:'—'});
