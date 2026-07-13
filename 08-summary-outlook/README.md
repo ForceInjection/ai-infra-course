@@ -9,11 +9,13 @@
 ├── README.md                    # 本文件
 ├── syllabus.md                  # 教学大纲 (90 分钟时间分配)
 ├── ppt-outline.md               # PPT 大纲 (40 页)
-├── course-project.md            # 课程大作业 (3 方向选 1)
+├── course-project.md            # 课程大作业 (3 方向选 1, 完整版)
+├── course-project-2026.md       # 课程大作业 (2026 统一版: 方向 A)
+├── course-project-2026.html     #   同上 (HTML 展示版, 适合投影)
 └── code/                        # 大作业骨架代码 + 报告模板
     ├── README.md
     ├── REPORT_TEMPLATE.md       #   技术报告模板
-    ├── gpu-container-hook/      #   方向 A: 容器+拦截 (3 files)
+    ├── gpu-hook/                #   方向 A: LD_PRELOAD CUDA hook (2 files + test)
     ├── k8s-gateway/             #   方向 B: K8s 调度 (6 files)
     └── kvcache-simulator/       #   方向 C: KV Cache (4 files)
 ```
