@@ -2,32 +2,6 @@
 
 > 90 分钟 &nbsp;|&nbsp; 45 页 PPT &nbsp;|&nbsp; 1 个 Flask 网关 (Random + Consistent Hash) + 1 个 Mock 后端 + 6 个交互式 HTML
 
-## 目录结构
-
-```text
-07-maas-infra/
-├── README.md                    # 本文件
-├── syllabus.md                  # 教学大纲 (90 分钟时间分配)
-├── ppt-outline.md               # PPT 大纲 (45 页)
-├── hands-on-exercise.md         # 课堂动手题
-├── homework.md                  # 课后练习
-├── lab-environment.md           # 实验环境搭建说明
-├── code/                        # 配套代码
-│   ├── README.md                #   使用说明 + 测试步骤
-│   ├── ai_gateway.py            #   Flask 简易 AI 网关 (PPT 第 42 页)
-│   ├── mock_vllm.py             #   vLLM Mock 后端 (无需 GPU，本地测试用)
-│   └── demo.sh                  #   一键启动/停止 (bash demo.sh start|stop)
-└── visuals/                        # 可视化 HTML (6 个)
-    ├── gateway-pipeline.html       #   基础网关流水线: 认证·限流·路由·转发
-    ├── ai-gateway-pipeline.html    #   AI 网关流水线: Semantic Router · Cache-Aware LB
-    ├── consistent-hash.html        #   Consistent Hash: Hash Ring 交互演示
-    ├── semantic-router.html        #   Semantic Router: 信号提取 → 模型决策
-    ├── openai-api-format.html      #   OpenAI API 请求/响应格式详解
-    └── pd-separation.html          #   PD 分离: Prefill→H100 池, Decode→H200 池
-    └── openai-api-format.html      #   OpenAI API 请求/响应格式详解
-    └── pd-separation.html          #   PD 分离: Prefill→H100 池, Decode→H200 池
-```
-
 ## 可视化 HTML
 
 | 可视化 | 用途 | 教学场景 |

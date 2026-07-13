@@ -15,23 +15,6 @@
 | Offloading / 量化 / LMCache / MoonCake | —                          | ✅ 优化策略              |
 | GQA 对 KV Cache 的影响                 | —                          | ✅ 深入分析              |
 
-## 目录结构
-
-```text
-05-vllm-inference/
-├── README.md                    # 本文件
-├── syllabus.md                  # 教学大纲 (120 分钟时间分配)
-├── ppt-outline.md               # PPT 大纲 (54 页)
-├── hands-on-exercise.md         # 课堂动手题 (3 个实验)
-├── homework.md                  # 课后练习 (8 个任务)
-├── lab-environment.md           # 实验环境搭建说明
-└── code/                        # 配套代码
-    ├── README.md                #   使用说明 + 预期输出
-    └── trace_nanovllm.py        #   nano-vllm 执行追踪脚本 (PPT 第 49–50 页)
-```
-
-> nano-vllm 源码在独立仓库 [ForceInjection/nano-vllm](https://github.com/ForceInjection/nano-vllm)，通过 `pip install` 安装，无需复制。
-
 ## 教学流程
 
 | 部分                        | 时长   | PPT 页 | 重点内容                                                                                              | 动手                                                   |

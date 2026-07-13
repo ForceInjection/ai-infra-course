@@ -2,23 +2,6 @@
 
 > 90 分钟 &nbsp;|&nbsp; 42 页 PPT &nbsp;|&nbsp; 2 个 C 程序 + 1 个 Python 脚本 &nbsp;|&nbsp; 3 个可视化 HTML
 
-## 目录结构
-
-```text
-03-gpu-virtualization/
-├── README.md
-├── syllabus.md / ppt-outline.md / hands-on-exercise.md / homework.md / lab-environment.md
-├── code/
-│   ├── README.md
-│   ├── 01_mymalloc.c       # LD_PRELOAD malloc hook 库 (PPT 第 12 + 33 页)
-│   ├── 02_test_malloc.c    # 配额测试程序
-│   └── 03_token_bucket.py  # 令牌桶限流演示 — HAMi 算力隔离 (PPT 第 15-16 页)
-└── visuals/
-    ├── ld-preload-flow.html          # LD_PRELOAD 拦截流程 6 步动画
-    ├── cuda-stack.html               # CUDA 软件栈 — 一次 cudaMalloc 穿越 5 层
-    └── gpu-sharing-comparison.html   # 四种方案对比 — MIG/Time-Slicing/HAMi/MPS
-```
-
 ## 可视化 HTML
 
 | 可视化                                                                 | 用途                               | 教学场景                                             |

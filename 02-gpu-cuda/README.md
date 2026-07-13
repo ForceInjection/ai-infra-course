@@ -2,21 +2,6 @@
 
 > 90 分钟 &nbsp;|&nbsp; 53 页 PPT &nbsp;|&nbsp; 4 个 CUDA 程序 &nbsp;|&nbsp; 5 个可视化 HTML
 
-## 目录结构
-
-```text
-02-gpu-cuda/
-├── README.md
-├── syllabus.md / ppt-outline.md / hands-on-exercise.md / homework.md / lab-environment.md
-├── code/
-│   ├── README.md / Makefile / cuda-docker
-│   └── 01_vec_add.cu / 02_matmul_naive.cu / 03_matmul_tiled.cu / 04_device_query.cu
-└── visuals/
-    ├── gpu-architecture.html / cuda-thread-hierarchy.html
-    ├── shared-memory-tiling.html / thread-index-mapping.html
-    └── cuda-thread-hardware-mapping.html  # 线程层次 — 软件→逻辑→物理映射
-```
-
 ## 可视化 HTML
 
 | 文件                                                                               | 用途                                  | 教学场景                                          |

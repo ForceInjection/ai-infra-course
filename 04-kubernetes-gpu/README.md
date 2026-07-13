@@ -2,26 +2,6 @@
 
 > 120 分钟 &nbsp;|&nbsp; 52 页 PPT &nbsp;|&nbsp; 3 个 YAML 文件 &nbsp;|&nbsp; 2 个可视化 HTML
 
-## 目录结构
-
-```text
-04-kubernetes-gpu/
-├── README.md                    # 本文件
-├── syllabus.md                  # 教学大纲 (120 分钟时间分配)
-├── ppt-outline.md               # PPT 大纲 (52 页)
-├── hands-on-exercise.md         # 课堂动手题 (3 个实验)
-├── homework.md                  # 课后练习 (3 个任务)
-├── lab-environment.md           # 实验环境搭建说明
-├── code/                        # 配套 YAML 文件 (3 个)
-│   ├── README.md                #   使用说明 + 运行命令
-│   ├── 01_nginx_demo.yaml       #   Nginx Deployment + Service (PPT 第 16 页 [动手])
-│   ├── 02_gpu_pod.yaml          #   GPU Pod — nvidia-smi 测试 (PPT 第 45 页 [动手 1])
-│   └── 03_gpu_deploy.yaml       #   GPU Deployment — 生产级工作负载 (PPT 第 45-46 页 [动手 1+2])
-└── visuals/                          # 可视化 HTML (2 个)
-    ├── k8s-gpu-flow.html             #   K8s GPU 调度全链路: 7 步交互动画 (PPT 第 48 页)
-    └── device-plugin-sequence.html   #   Device Plugin 交互时序: 7 步 gRPC 调用流程
-```
-
 ## 可视化 HTML
 
 | 文件                                                  | 用途                                | 教学场景                                                                                                                 |
