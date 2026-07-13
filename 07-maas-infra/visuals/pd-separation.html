@@ -41,7 +41,7 @@ svg { max-width:100%; max-height:100%; }
   <rect x="40" y="160" width="420" height="170" rx="10" fill="#231440" stroke="#0F9ED5" stroke-width="2"/>
   <rect x="40" y="160" width="420" height="30" rx="10" fill="#0F9ED5" opacity="0.3"/>
   <rect x="40" y="170" width="420" height="20" fill="#0F9ED5" opacity="0.3"/>
-  <text x="250" y="180" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Prefill Pool — 高算力</text>
+  <text x="250" y="180" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Prefill Pool — 高算力<tspan fill="#4ade80" font-size="11"> ×4 H100</tspan></text>
 
   <!-- H100 GPUs -->
   <rect x="65" y="205" width="85" height="100" rx="6" fill="#0E2841" stroke="#0F9ED5" stroke-width="1.5"/>
@@ -66,39 +66,42 @@ svg { max-width:100%; max-height:100%; }
   <text x="408" y="235" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H100</text>
   <text x="408" y="265" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">...</text>
 
-  <!-- Prefill stats -->
-  <text x="340" y="210" text-anchor="middle" font-size="9" fill="#4ade80" font-weight="bold" font-family="sans-serif">×4</text>
-
   <!-- Right: H200 Decode Pool -->
   <rect x="540" y="160" width="420" height="170" rx="10" fill="#231440" stroke="#f97316" stroke-width="2"/>
   <rect x="540" y="160" width="420" height="30" rx="10" fill="#f97316" opacity="0.3"/>
   <rect x="540" y="170" width="420" height="20" fill="#f97316" opacity="0.3"/>
-  <text x="750" y="180" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Decode Pool — 高带宽</text>
+  <text x="750" y="180" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Decode Pool — 高带宽<tspan fill="#4ade80" font-size="11"> ×6 H200</tspan></text>
 
-  <!-- H200 GPUs -->
-  <rect x="565" y="205" width="85" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
-  <text x="608" y="235" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
-  <text x="608" y="250" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">989 TFLOPS</text>
-  <text x="608" y="265" text-anchor="middle" font-size="8" fill="#fbbf24" font-family="sans-serif">4.8 TB/s ★</text>
-  <text x="608" y="280" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">适合 Decode</text>
-  <text x="608" y="293" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">GEMV 密集</text>
+  <!-- H200 GPUs (6 × 60px wide to fit) -->
+  <rect x="558" y="205" width="60" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="588" y="235" text-anchor="middle" font-size="9" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="588" y="255" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">4.8★</text>
+  <text x="588" y="270" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">Decode</text>
 
-  <rect x="665" y="205" width="85" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
-  <text x="708" y="235" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
-  <text x="708" y="250" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">989 TFLOPS</text>
-  <text x="708" y="265" text-anchor="middle" font-size="8" fill="#fbbf24" font-family="sans-serif">4.8 TB/s ★</text>
-  <text x="708" y="280" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">适合 Decode</text>
-  <text x="708" y="293" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">GEMV 密集</text>
+  <rect x="624" y="205" width="60" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="654" y="235" text-anchor="middle" font-size="9" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="654" y="255" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">4.8★</text>
+  <text x="654" y="270" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">Decode</text>
 
-  <rect x="765" y="205" width="85" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
-  <text x="808" y="235" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
-  <text x="808" y="265" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">...</text>
+  <rect x="690" y="205" width="60" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="720" y="235" text-anchor="middle" font-size="9" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="720" y="255" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">4.8★</text>
+  <text x="720" y="270" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">Decode</text>
 
-  <rect x="865" y="205" width="85" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
-  <text x="908" y="235" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
-  <text x="908" y="265" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">...</text>
+  <rect x="756" y="205" width="60" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="786" y="235" text-anchor="middle" font-size="9" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="786" y="255" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">4.8★</text>
+  <text x="786" y="270" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">Decode</text>
 
-  <text x="840" y="210" text-anchor="middle" font-size="9" fill="#4ade80" font-weight="bold" font-family="sans-serif">×6</text>
+  <rect x="822" y="205" width="60" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="852" y="235" text-anchor="middle" font-size="9" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="852" y="255" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">4.8★</text>
+  <text x="852" y="270" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">Decode</text>
+
+  <rect x="888" y="205" width="60" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="918" y="235" text-anchor="middle" font-size="9" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="918" y="255" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">4.8★</text>
+  <text x="918" y="270" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">Decode</text>
 
   <!-- Arrows from Gateway to pools -->
   <defs>
@@ -127,7 +130,7 @@ svg { max-width:100%; max-height:100%; }
   <text x="710" y="122" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">(逐 token 追加)</text>
 
   <!-- KV Cache transfer between pools — big green arrow -->
-  <line x1="460" y1="360" x2="540" y2="360" stroke="#4ade80" stroke-width="3" stroke-dasharray="8,4" marker-end="url(#arrow-green)"/>
+  <line x1="460" y1="360" x2="540" y2="360" stroke="#4ade80" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#arrow-green)"/>
   <text x="500" y="350" text-anchor="middle" font-size="9" fill="#4ade80" font-weight="bold" font-family="sans-serif">KV Cache 传输 (NIXL / RDMA)</text>
   <text x="500" y="375" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">节点内 NVLink &lt;1μs &nbsp;|&nbsp; 跨节点 RDMA ~10μs</text>
 
