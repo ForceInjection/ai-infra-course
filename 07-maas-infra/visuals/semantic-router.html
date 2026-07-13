@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Semantic Router — 信号驱动的智能路由</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:10px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.15em; color:#F8F6FB; }
+.header .sub { font-size:0.6em; color:#8A7BB5; margin-top:2px; }
+.content { flex:1; min-height:0; display:flex; gap:10px; padding:0 14px 10px; max-width:1200px; width:100%; margin:0 auto; }
+.main { flex:1; display:flex; flex-direction:column; gap:8px; min-width:0; }
+.side { width:320px; flex-shrink:0; display:flex; flex-direction:column; gap:8px; }
+.box { background:#231440; border:1px solid #432879; border-radius:8px; padding:10px 12px; }
+.box h3 { font-size:0.8em; color:#8A7BB5; margin-bottom:6px; }
+
+input.query { width:100%; padding:8px 12px; border-radius:6px; border:1px solid #432879; background:#0E2841; color:#F8F6FB; font-size:0.8em; font-family:inherit; outline:none; transition:border 0.2s; }
+input.query:focus { border-color:#0F9ED5; }
+
+/* Pipeline */
+.pipeline { display:flex; gap:6px; align-items:stretch; }
+.stage { flex:1; background:#0E2841; border:1px solid #432879; border-radius:8px; padding:10px; min-height:100px; }
+.stage.active { border-color:#fbbf24; }
+.stage .num { font-size:1em; font-weight:bold; color:#0F9ED5; margin-bottom:4px; }
+.stage .label { font-size:0.65em; color:#8A7BB5; margin-bottom:4px; }
+.stage .signal { font-size:0.65em; padding:2px 6px; border-radius:3px; margin:2px 0; display:inline-block; }
+.stage .signal.on { background:#4ade80; color:#1A0F2E; }
+.stage .signal.off { background:#432879; color:#8A7BB5; }
+
+/* Decision */
+.rule { font-size:0.65em; font-family:monospace; padding:3px 6px; margin:2px 0; border-radius:3px; background:#0E2841; }
+.rule.matched { border-left:3px solid #4ade80; color:#4ade80; }
+.rule.skipped { border-left:3px solid #432879; color:#8A7BB5; }
+.rule .arrow { color:#fbbf24; }
+
+.result { display:flex; align-items:center; gap:10px; padding:10px; border-radius:6px; background:#0E2841; margin-top:6px; }
+.result .model-icon { font-size:1.5em; }
+.result .model-name { font-size:1em; font-weight:bold; color:#F8F6FB; }
+.result .model-reason { font-size:0.65em; color:#8A7BB5; }
+.result .badge { font-size:0.6em; padding:3px 8px; border-radius:10px; margin-left:6px; }
+.badge-fast { background:#4ade80; color:#1A0F2E; }
+.badge-cheap { background:#196B24; color:#4ade80; }
+.badge-power { background:#A02B93; color:#F8F6FB; }
+
+.model-card { display:flex; align-items:center; gap:8px; padding:6px 8px; margin:3px 0; border-radius:4px; font-size:0.7em; background:#0E2841; }
+.model-card .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.model-card .info { flex:1; }
+.model-card .info .cost { color:#8A7BB5; font-size:0.85em; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Semantic Router — 信号驱动的智能模型路由</h1>
+  <div class="sub">Shannon 两层模型: ① 信号提取 (信息论) → ② 布尔决策 (开关电路) | NeurIPS 2025: -47% 延迟, -48.5% Token</div>
+</div>
+
+<div class="content">
+
+<div class="main">
+  <div class="box">
+    <input class="query" id="query" type="text"
+      placeholder="输入用户请求, 例如: 帮我写一个 Python 快速排序 | 量子力学怎么学 | 今天天气怎么样"
+      oninput="analyze()" onfocus="this.select()">
+  </div>
+
+  <div class="pipeline">
+    <div class="stage" id="stage-signal">
+      <div class="num">① 信号提取层</div>
+      <div class="label">Information Theory Regime — 每提取一个信号, 路由不确定性降低</div>
+      <div id="signals"></div>
+    </div>
+    <div class="stage" id="stage-decision">
+      <div class="num">② 决策引擎</div>
+      <div class="label">Boolean Algebra Regime — {AND, OR, NOT} 组合信号 → 路由策略</div>
+      <div id="rules"></div>
+    </div>
+  </div>
+
+  <div class="box">
+    <h3>路由结果</h3>
+    <div id="result"></div>
+  </div>
+</div>
+
+<div class="side">
+  <div class="box">
+    <h3>模型池 — 3 个模型, 不同能力/成本</h3>
+    <div class="model-card">
+      <div class="dot" style="background:#4ade80"></div>
+      <div class="info"><div>Qwen2.5-7B</div><div class="cost">通用聊天 | 快 · 便宜 · 本地</div></div>
+      <div style="font-size:0.65em;color:#4ade80;">默认</div>
+    </div>
+    <div class="model-card">
+      <div class="dot" style="background:#0F9ED5"></div>
+      <div class="info"><div>DeepSeek-Coder-6.7B</div><div class="cost">代码生成 | 擅长编程 · 成本中等</div></div>
+      <div style="font-size:0.65em;color:#0F9ED5;">代码</div>
+    </div>
+    <div class="model-card">
+      <div class="dot" style="background:#A02B93"></div>
+      <div class="info"><div>GPT-4o</div><div class="cost">复杂推理 | 最强 · 最贵 ($15/M tokens) · 云端</div></div>
+      <div style="font-size:0.65em;color:#A02B93;">强力</div>
+    </div>
+  </div>
+
+  <div class="box">
+    <h3>效果数据 (NeurIPS 2025)</h3>
+    <div style="font-size:0.65em;line-height:1.7;color:#8A7BB5;">
+      vs 所有请求发给同一个模型:<br>
+      · MMLU-Pro 准确率 <span style="color:#4ade80;">+10.2%</span><br>
+      · 平均延迟 <span style="color:#4ade80;">-47.1%</span><br>
+      · Token 消耗 <span style="color:#4ade80;">-48.5%</span><br>
+      · 成本节约 <span style="color:#4ade80;">~45%</span>
+    </div>
+    <div style="font-size:0.55em;color:#432879;margin-top:4px;">
+      核心洞察: 简单问题用 7B 秒回, 复杂问题升级到 GPT-4o。<br>
+      "在正确的时间、用正确的模型、以正确的成本"
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+const MODELS = {
+    qwen:  { name:'Qwen2.5-7B', icon:'🚀', badges:['fast','cheap'], reason:'默认模型 — 最简单、最快、最便宜' },
+    coder: { name:'DeepSeek-Coder-6.7B', icon:'💻', badges:[], reason:'检测到代码信号 → 路由到代码专用模型' },
+    gpt4o: { name:'GPT-4o', icon:'🧠', badges:['power'], reason:'高复杂度 + 专业领域 → 升级到最强模型' },
+};
+
+function analyze() {
+    const q = document.getElementById('query').value.trim();
+    if (!q) {
+        document.getElementById('signals').innerHTML = '<div style="font-size:0.65em;color:#432879;">等待输入...</div>';
+        document.getElementById('rules').innerHTML = '<div style="font-size:0.65em;color:#432879;">等待信号...</div>';
+        document.getElementById('result').innerHTML = '';
+        document.getElementById('stage-signal').classList.remove('active');
+        document.getElementById('stage-decision').classList.remove('active');
+        return;
+    }
+
+    // ── Signal Extraction ──
+    const signals = {};
+    // Keywords
+    const codeWords = ['写','代码','函数','算法','排序','Python','Rust','Go','Java','bug','debug','API','实现','编程','程序','数组','递归','时间复杂度'];
+    const mathWords  = ['数学','推导','公式','定理','微积分','几何','概率','统计','证明','方程','量子','物理','化学','怎么学','原理'];
+    const translateWords = ['翻译','英文','中文','日语','法语','德语'];
+    const chatWords  = ['天气','你好','谢谢','怎么样','推荐','介绍','帮我','什么是','为什么'];
+
+    signals.code = codeWords.some(w => q.includes(w));
+    signals.math = mathWords.some(w => q.includes(w));
+    signals.translate = translateWords.some(w => q.includes(w));
+    signals.chat = chatWords.some(w => q.includes(w) || q.length < 10);
+    signals.lang = /[一-龥]/.test(q) ? 'zh' : 'en';
+    signals.length = q.length;
+    signals.complexity = (q.length > 40 || signals.math) ? 'HIGH' : (q.length > 15 ? 'MEDIUM' : 'LOW');
+
+    // Render signals
+    document.getElementById('stage-signal').classList.add('active');
+    const sigNames = [
+        { key:'code', label:'代码信号', val:signals.code },
+        { key:'math', label:'数学/科学', val:signals.math },
+        { key:'translate', label:'翻译信号', val:signals.translate },
+        { key:'chat', label:'聊天信号', val:signals.chat },
+        { key:'lang', label:'语言', val:signals.lang },
+        { key:'complexity', label:'复杂度', val:signals.complexity },
+    ];
+    document.getElementById('signals').innerHTML = sigNames.map(s =>
+        `<span class="signal ${s.val ? 'on' : 'off'}">${s.label}: ${s.val||'无'}</span>`
+    ).join('<br>');
+
+    // ── Decision Engine ──
+    document.getElementById('stage-decision').classList.add('active');
+    let selected = 'qwen';
+    const rules = [
+        { cond: signals.math && signals.complexity === 'HIGH', model: 'gpt4o',
+          text: `IF complexity==HIGH AND math==YES <span class="arrow">→ GPT-4o</span>` },
+        { cond: signals.code, model: 'coder',
+          text: `ELIF domain=="code" <span class="arrow">→ DeepSeek-Coder</span>` },
+        { cond: true, model: 'qwen',
+          text: `ELSE <span class="arrow">→ Qwen2.5-7B (默认)</span>` },
+    ];
+    rules.forEach(r => { if (r.cond && selected === 'qwen' && r.model !== 'qwen') selected = r.model; });
+
+    document.getElementById('rules').innerHTML = rules.map(r =>
+        `<div class="rule ${r.model === selected ? 'matched' : 'skipped'}">${r.text}</div>`
+    ).join('');
+
+    // ── Result ──
+    const m = MODELS[selected];
+    const badges = m.badges.map(b => {
+        if (b === 'fast') return '<span class="badge badge-fast">快</span>';
+        if (b === 'cheap') return '<span class="badge badge-cheap">便宜</span>';
+        if (b === 'power') return '<span class="badge badge-power">最强</span>';
+        return '';
+    }).join('');
+    document.getElementById('result').innerHTML = `
+      <div class="result">
+        <div class="model-icon">${m.icon}</div>
+        <div>
+          <div class="model-name">${m.name} ${badges}</div>
+          <div class="model-reason">${m.reason}</div>
+        </div>
+      </div>`;
+}
+
+// Pre-fill with example
+document.getElementById('query').value = '帮我写一个 Python 快速排序算法';
+analyze();
+</script>
+</body>
+</html>

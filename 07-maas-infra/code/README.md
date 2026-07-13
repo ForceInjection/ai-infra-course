@@ -4,7 +4,7 @@
 
 | 文件            | 内容                                                                    | 对应 PPT        |
 | --------------- | ----------------------------------------------------------------------- | --------------- |
-| `ai_gateway.py` | Flask 简易 AI 网关 — 加权路由 + Token Bucket 限流 + 健康检查 + 故障转移 | 第 42 页 [动手] |
+| `ai_gateway.py` | Flask 简易 AI 网关 — Random/Consistent Hash LB + Token Bucket + 健康检查 + 故障转移 | 第 42 页 [动手] |
 | `mock_vllm.py`  | vLLM Mock 后端 — 无需 GPU，本地测试网关用                               | —               |
 
 ## 环境要求
@@ -58,6 +58,30 @@ curl -s http://localhost:8080/health  # 查看后端状态
 curl -s http://localhost:8080/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{"model":"test","messages":[{"role":"user","content":"hello"}],"max_tokens":10}'
+```
+
+## 负载均衡策略
+
+通过环境变量 `LB_STRATEGY` 切换:
+
+```bash
+# 加权随机 (默认) — 无 Cache 亲和性
+LB_STRATEGY=random python3 ai_gateway.py
+
+# 一致性哈希 — 相同 Session-ID → 固定后端 (KV Cache 热命中)
+LB_STRATEGY=consistent-hash python3 ai_gateway.py
+```
+
+验证一致性哈希效果:
+```bash
+# 同一 session 的所有请求打到同一个后端
+for i in $(seq 1 5); do
+  curl -s http://localhost:8080/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer test-key" \
+    -H "X-Session-ID: user-alice" \
+    -d '{"model":"test","messages":[{"role":"user","content":"hi"}]}'
+done
 ```
 
 ## 代码结构

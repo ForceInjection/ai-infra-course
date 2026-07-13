@@ -27,6 +27,7 @@
     3. 故障转移: kill 8001 后端，观察请求自动切换到 8002
 """
 
+import os
 import random
 import threading
 import time
@@ -107,14 +108,12 @@ def health_check(backend_url):
     return healthy
 
 
-# ============ 加权随机路由 ============
-def select_backend():
-    """加权随机选择健康后端。"""
-    backends = BACKENDS["default"]
-    healthy = [b for b in backends if health_check(b["url"])]
-    if not healthy:
-        return None
+# ============ 负载均衡策略 ============
+LB_STRATEGY = os.environ.get("LB_STRATEGY", "random")  # "random" | "consistent-hash"
 
+
+def _select_random(healthy):
+    """加权随机 — 无状态、均匀分布。Cache 亲和性: 无。"""
     total_weight = sum(b["weight"] for b in healthy)
     r = random.uniform(0, total_weight)
     upto = 0
@@ -123,6 +122,25 @@ def select_backend():
         if r <= upto:
             return b
     return healthy[0]
+
+
+def _select_consistent_hash(healthy, key):
+    """一致性哈希 — 相同 key → 固定后端。Cache 亲和性: 强。
+    不维护 Hash Ring，直接用取模映射。节点增减时需重建 key→backend 映射。"""
+    h = hash(key) & 0xFFFFFFFF   # 32-bit unsigned
+    return healthy[h % len(healthy)]
+
+
+def select_backend(route_key=None):
+    """选择健康后端。route_key=None 时使用加权随机，否则用一致性哈希。"""
+    backends = BACKENDS["default"]
+    healthy = [b for b in backends if health_check(b["url"])]
+    if not healthy:
+        return None
+
+    if route_key and LB_STRATEGY == "consistent-hash":
+        return _select_consistent_hash(healthy, route_key)
+    return _select_random(healthy)
 
 
 # ============ API 端点 ============
@@ -139,8 +157,9 @@ def chat_completions():
     if not buckets[api_key].consume():
         return jsonify({"error": "Rate limit exceeded. Retry later."}), 429
 
-    # 3. 路由选择
-    backend = select_backend()
+    # 3. 路由选择 (Consistent Hash 模式: 用 Session-ID 或 API Key 做 hash key)
+    route_key = request.headers.get("X-Session-ID", api_key)
+    backend = select_backend(route_key=route_key)
     if not backend:
         return jsonify({"error": "No healthy backend available"}), 503
 
@@ -172,6 +191,7 @@ if __name__ == "__main__":
     print("=" * 50)
     print("AI Gateway — 简易推理网关")
     print(f"后端: {[b['url'] for b in BACKENDS['default']]}")
+    print(f"LB 策略: {LB_STRATEGY}")
     print(f"限流: 5 req/s per API Key, burst 10")
     print("端点: http://localhost:8080/v1/chat/completions")
     print("=" * 50)

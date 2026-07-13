@@ -1,6 +1,6 @@
 # 模块 7：从推理引擎到服务平台
 
-> 90 分钟 &nbsp;|&nbsp; 45 页 PPT &nbsp;|&nbsp; 1 个 Flask 网关 + 1 个 Mock 后端 + 2 个交互式 HTML
+> 90 分钟 &nbsp;|&nbsp; 45 页 PPT &nbsp;|&nbsp; 1 个 Flask 网关 (Random + Consistent Hash) + 1 个 Mock 后端 + 4 个交互式 HTML
 
 ## 目录结构
 
@@ -17,9 +17,11 @@
 │   ├── ai_gateway.py            #   Flask 简易 AI 网关 (PPT 第 42 页)
 │   ├── mock_vllm.py             #   vLLM Mock 后端 (无需 GPU，本地测试用)
 │   └── demo.sh                  #   一键启动/停止 (bash demo.sh start|stop)
-└── visuals/                        # 可视化 HTML (2 个)
-    ├── gateway-pipeline.html       #   基础网关流水线 — 认证·限流·路由·转发
-    └── ai-gateway-pipeline.html    #   AI 网关流水线 — Semantic Router · Cache-Aware LB
+└── visuals/                        # 可视化 HTML (4 个)
+    ├── gateway-pipeline.html       #   基础网关流水线: 认证·限流·路由·转发
+    ├── ai-gateway-pipeline.html    #   AI 网关流水线: Semantic Router · Cache-Aware LB
+    ├── consistent-hash.html        #   Consistent Hash: Hash Ring 交互演示
+    └── semantic-router.html        #   Semantic Router: 信号提取 → 模型决策
 ```
 
 ## 可视化 HTML
@@ -28,8 +30,34 @@
 |--------|------|----------|
 | [基础网关流水线](visuals/gateway-pipeline.html) | 四段式流水线: 认证 → 令牌桶限流 → 加权路由 → 转发 | 快速理解网关核心流程：发送请求、触发限流 (429)、模拟宕机 (503) |
 | [AI 网关推理流水线](visuals/ai-gateway-pipeline.html) | Semantic Router 模型路由 + Cache-Aware LB + 令牌桶 + KV Cache 亲和性 | 深入讲解 vLLM Router：切换 LB 策略对比、请求类型→模型路由、Cache 热度驱动 Worker 选择 |
+| [Consistent Hash](visuals/consistent-hash.html) | Hash Ring + 虚拟节点 + 节点增删时的 key 重映射 | 辅助可视化 (简化版)，配合下方文字说明使用 |
+| [Semantic Router](visuals/semantic-router.html) | Shannon 两层模型: 信号提取 (信息论) → 布尔决策 (开关电路) | 讲解 Semantic Router 时打开：输入查询，观察信号提取和模型选择决策 |
 
 **AI 网关交互方式**: 下拉选择请求类型 («写代码»/«翻译»/«聊天») → Semantic Router 自动选模型；切换 LB 策略 (Random / Consistent Hash / Cache-Aware) 观察 Worker 选择变化；Worker Cache 热度动态变化 (命中→升温，未命中→降温)。
+
+### Consistent Hash 在 AI 网关中的作用
+
+**是什么？**
+
+Consistent Hash 是一种特殊的哈希算法，它将 Worker 节点和请求 Key 都映射到同一个 Hash Ring（0 → 2³²-1 的环）上。请求到来时，从 Key 的 hash 位置**顺时针**找到第一个 Worker，由该 Worker 处理请求。
+
+**解决什么问题？**
+
+在 AI 推理网关中，同一个用户的连续请求如果每次打到不同的 Worker，KV Cache 无法复用——每次都要重新 Prefill，TTFT 暴增。
+
+Consistent Hash 保证了：**同一个 Key → 永远路由到同一个 Worker**。Key 可以是 `Session-ID` 或 `API-Key`。用户 Alice 的 10 轮对话全部打到 Worker #2 → Worker #2 的 KV Cache 里始终有 Alice 的对话历史 → 第 2 到第 10 轮的 Prefill 被跳过 → TTFT 降低 80-95%。
+
+**比简单取模 hash%N 好在哪里？**
+
+当 Worker 数量变化时（扩容或宕机），简单取模 `hash(key) % N` 会导致**几乎所有 key 的映射都改变**——4→5 个 Worker 时 80% 的 key 重新映射，所有 KV Cache 作废。
+
+Consistent Hash 下只有 **~1/N 的 key 需要重新映射**（4→5 时只有 ~20%），因为每个 Worker 只影响环上相邻一段。大部分 key 的 KV Cache 仍然有效。
+
+**vLLM Router 中的实现**
+
+vLLM Router 的 Consistent Hash 基于 `X-Session-ID` header：相同 Session → 相同 Worker → Prefix Cache 持续命中。配合 Cache-Aware LB（查询 Worker 的实际 Cache 命中率），可以进一步提升到 85% 命中率。
+
+---
 
 ## 教学流程
 

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consistent Hash — KV Cache 亲和性路由</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:10px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.15em; color:#F8F6FB; }
+.header .sub { font-size:0.6em; color:#8A7BB5; margin-top:2px; }
+.content { flex:1; min-height:0; display:flex; gap:10px; padding:0 14px 10px; max-width:1200px; width:100%; margin:0 auto; }
+.main { flex:1; display:flex; align-items:center; justify-content:center; min-width:0; }
+.side { width:340px; flex-shrink:0; display:flex; flex-direction:column; gap:8px; overflow-y:auto; }
+.box { background:#231440; border:1px solid #432879; border-radius:8px; padding:10px 12px; }
+.box h3 { font-size:0.75em; color:#8A7BB5; margin-bottom:6px; }
+.btn { padding:6px 14px; border:none; border-radius:6px; font-size:0.72em; cursor:pointer; font-weight:bold; font-family:inherit; }
+.btn:hover { filter:brightness(1.2); }
+.btn-add { background:#156082; color:#F8F6FB; }
+.btn-rm { background:#E97132; color:#F8F6FB; }
+.btn-reset { background:#432879; color:#F8F6FB; }
+.controls { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
+
+.pworker { display:flex; align-items:center; gap:8px; padding:5px 8px; margin:3px 0; border-radius:4px; font-size:0.68em; background:#0E2841; }
+.pworker .dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+.pworker .info { flex:1; }
+.pworker .info .name { color:#F8F6FB; }
+.pworker .info .vns { color:#8A7BB5; font-size:0.85em; }
+.pworker .kc { color:#8A7BB5; }
+
+.compare { font-size:0.65em; line-height:1.6; color:#8A7BB5; }
+.compare .ch { color:#4ade80; }
+.compare .simple { color:#E97132; }
+
+.log { font-family:monospace; font-size:0.62em; line-height:1.5; max-height:120px; overflow-y:auto; }
+.log .entry { padding:1px 0; border-bottom:1px solid #43287950; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Consistent Hash — 同 key → 同 Worker → KV Cache 热命中</h1>
+  <div class="sub">3 个 Worker × 3 虚拟节点 = 9 个 VN 均匀散布在环上 | 发送 Key 观察路由</div>
+</div>
+
+<div class="content">
+<div class="main" style="flex-direction:column; gap:6px;">
+  <svg id="ring" viewBox="0 0 500 500" style="max-width:100%;max-height:100%;"></svg>
+  <div style="font-size:0.6em; color:#8A7BB5; text-align:center; line-height:1.6;">
+    ● 虚拟节点 (VN) = 环上圆点 &nbsp;|&nbsp;
+    <b>弧段颜色</b> = 该段归属的 Worker &nbsp;|&nbsp;
+    ● 环内小圆点 = Key 的 hash 位置 &nbsp;|&nbsp;
+    <b>Key 归属规则</b>: Key 从 hash 位置<span style="color:#fbbf24;">顺时针</span>找到第一个 VN，该 VN 所属的 Worker 接管此 Key
+  </div>
+</div>
+
+<div class="side">
+  <div class="box">
+    <h3>Worker 节点</h3>
+    <div id="workers-panel"></div>
+    <div style="font-size:0.6em;color:#432879;margin-top:4px;">每个 Worker = 3 个虚拟节点</div>
+  </div>
+
+  <div class="box">
+    <h3>Key 分布</h3>
+    <div class="compare">
+      <div>Consistent Hash: <span id="ch-dist" class="ch"></span></div>
+      <div>简单取模 hash%3: <span id="simple-dist" class="simple"></span></div>
+    </div>
+    <div style="margin-top:8px;">
+      <button class="btn btn-add" onclick="sendKey()" style="width:100%">发送一个 Key</button>
+      <button class="btn btn-reset" onclick="resetKeys()" style="width:100%;margin-top:4px;">清空 Key</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ── cyrb53: 32-bit hash with excellent distribution ──
+function hash(str) {
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0; i < str.length; i++) {
+        const ch = str.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (h2 >>> 0);
+}
+
+const RING_MAX = 0xFFFFFFFF, VN = 3, R = 190, CX = 250, CY = 230;
+const COLORS = ['#ef4444','#3b82f6','#22c55e'];
+const workers = ['W1','W2','W3'];
+let keys = [];
+let keyIdx = 0;
+const KEY_NAMES = ['user-A','user-B','user-C','user-D','app-1','app-2','bot-1','bot-2','svc-a','svc-b','batch-1','batch-2'];
+
+// ── Build ring: spread each worker's VNs evenly, interleaved with other workers ──
+function getRing() {
+    const ring = [];
+    workers.forEach((w, wi) => {
+        const base = hash(w + '#' + wi);  // cyrb53: excellent distribution even on short strings
+        for (let v = 0; v < VN; v++) {
+            ring.push({ hash: ((base + Math.floor(RING_MAX / VN) * v) >>> 0), worker: w, wi });
+        }
+    });
+    ring.sort((a, b) => a.hash - b.hash);
+    return ring;
+}
+
+function findWorker(keyHash, ring) {
+    if (!ring.length) return null;
+    let lo = 0, hi = ring.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (ring[mid].hash >= keyHash) hi = mid; else lo = mid + 1; }
+    return ring[lo].hash < keyHash ? ring[0].worker : ring[lo].worker;
+}
+
+// ── Draw ──
+function draw() {
+    const svg = document.getElementById('ring');
+    const ring = getRing();
+    let h = '';
+
+    // Ring
+    h += `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="#432879" stroke-width="2"/>`;
+
+    // Fixed colors: W1=红, W2=蓝, W3=绿
+    const wColor = { W1: COLORS[0], W2: COLORS[1], W3: COLORS[2] };
+
+    // Arc segments: each VN "owns" the ring counterclockwise back to the previous VN.
+    // I.e., the arc from prev-hash to this-vn-hash belongs to this VN's worker.
+    if (ring.length > 0) {
+        for (let i = 0; i < ring.length; i++) {
+            const prev = ring[(i - 1 + ring.length) % ring.length];
+            const cur  = ring[i];
+            const startAng = (prev.hash / RING_MAX) * 2 * Math.PI - Math.PI / 2;
+            let endAng = (cur.hash / RING_MAX) * 2 * Math.PI - Math.PI / 2;
+            if (endAng <= startAng) endAng += 2 * Math.PI;
+            const x1 = CX + R * Math.cos(startAng), y1 = CY + R * Math.sin(startAng);
+            const x2 = CX + R * Math.cos(endAng), y2 = CY + R * Math.sin(endAng);
+            const large = (endAng - startAng) > Math.PI ? 1 : 0;
+            h += `<path d="M ${x1} ${y1} A ${R} ${R} 0 ${large} 1 ${x2} ${y2}" fill="none" stroke="${wColor[cur.worker]}" stroke-width="3" opacity="0.35"/>`;
+        }
+    }
+
+    // VN dots on ring with labels
+    ring.forEach(p => {
+        const ang = (p.hash / RING_MAX) * 2 * Math.PI - Math.PI / 2;
+        const x = CX + R * Math.cos(ang), y = CY + R * Math.sin(ang);
+        const c = wColor[p.worker];
+        h += `<circle cx="${x}" cy="${y}" r="6" fill="${c}" stroke="#1A0F2E" stroke-width="2"/>`;
+        // Label outside ring
+        const lx = CX + (R + 16) * Math.cos(ang);
+        const ly = CY + (R + 16) * Math.sin(ang);
+        h += `<text x="${lx}" y="${ly}" text-anchor="middle" font-size="9" fill="${c}" font-family="sans-serif" font-weight="bold">${p.worker}</text>`;
+    });
+
+    // Keys inside ring
+    keys.forEach(k => {
+        const ang = (k.hash / RING_MAX) * 2 * Math.PI - Math.PI / 2;
+        const x = CX + (R - 35) * Math.cos(ang), y = CY + (R - 35) * Math.sin(ang);
+        h += `<circle cx="${x}" cy="${y}" r="4" fill="${wColor[k.worker]}" stroke="#fff" stroke-width="0.8"><title>${k.str} → ${k.worker}</title></circle>`;
+    });
+
+    // Center
+    h += `<text x="${CX}" y="${CY-5}" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold">Hash Ring</text>`;
+    h += `<text x="${CX}" y="${CY+12}" text-anchor="middle" font-size="9" fill="#8A7BB5">${workers.length} Workers · ${ring.length} VNs</text>`;
+
+    svg.innerHTML = h;
+
+    // Side panel
+    const div = document.getElementById('workers-panel');
+    div.innerHTML = workers.map((w, i) => {
+        const kc = keys.filter(k => k.worker === w).length;
+        const klist = keys.filter(k => k.worker === w).map(k => k.str).join(', ');
+        return `<div class="pworker">
+          <div class="dot" style="background:${wColor[w]}"></div>
+          <div class="info"><div class="name">${w}</div><div class="vns">3 虚拟节点</div></div>
+          <div class="kc">${kc} keys${klist ? ': ' + klist : ''}</div></div>`;
+    }).join('');
+
+    // Distribution comparison
+    if (keys.length > 0) {
+        const chCounts = {}; keys.forEach(k => { chCounts[k.worker] = (chCounts[k.worker] || 0) + 1; });
+        document.getElementById('ch-dist').textContent = workers.map(w => `${w}:${chCounts[w]||0}`).join(' ');
+
+        const n = workers.length;
+        const simpleCounts = {};
+        keys.forEach(k => { const sw = workers[k.hash % n]; simpleCounts[sw] = (simpleCounts[sw] || 0) + 1; });
+        document.getElementById('simple-dist').textContent = workers.map(w => `${w}:${simpleCounts[w]||0}`).join(' ');
+
+    }
+}
+
+// ── Actions ──
+function sendKey() {
+    const name = KEY_NAMES[keyIdx % KEY_NAMES.length]; keyIdx++;
+    const h = hash(name), ring = getRing(), w = findWorker(h, ring);
+    keys.push({ str: name, hash: h, worker: w });
+    document.getElementById('simple-dist').textContent =
+        workers.map(w => `${w}:${keys.filter(k => k.worker === w).length}`).join('  ');
+    draw();
+}
+function resetKeys() {
+    keys = []; keyIdx = 0;
+    document.getElementById('simple-dist').textContent = '';
+    draw();
+}
+
+draw();
+</script>
+</body>
+</html>
