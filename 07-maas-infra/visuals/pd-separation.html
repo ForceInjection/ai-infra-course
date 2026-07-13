@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PD 分离 — Prefill / Decode 分池路由</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#1A0F2E; color:#C8BEE0; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+.header { text-align:center; padding:10px 16px 4px; flex-shrink:0; }
+.header h1 { font-size:1.15em; color:#F8F6FB; }
+.header .sub { font-size:0.6em; color:#8A7BB5; margin-top:2px; }
+.content { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:0 14px 10px; }
+svg { max-width:100%; max-height:100%; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>PD 分离 — Prefill 和 Decode 各走各的 GPU 池</h1>
+  <div class="sub">Prefill (compute-bound) → H100 池 &nbsp;|&nbsp; Decode (memory-bound) → H200 池 &nbsp;|&nbsp; KV Cache 通过 NIXL/RDMA 跨池传输</div>
+</div>
+
+<div class="content">
+<svg viewBox="0 0 1000 520">
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1000" height="520" rx="12" fill="#1A0F2E"/>
+
+  <!-- Gateway -->
+  <rect x="350" y="18" width="300" height="60" rx="10" fill="#0E2841" stroke="#fbbf24" stroke-width="2"/>
+  <text x="500" y="44" text-anchor="middle" font-size="13" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">vLLM Router — PD Router</text>
+  <text x="500" y="62" text-anchor="middle" font-size="9" fill="#8A7BB5" font-family="sans-serif">is_prefill? → H100 Pool &nbsp;|&nbsp; is_decode? → H200 Pool</text>
+
+  <!-- Request flow -->
+  <!-- User request incoming -->
+  <text x="500" y="15" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">用户请求</text>
+  <line x1="500" y1="16" x2="500" y2="30" stroke="#8A7BB5" stroke-width="1" marker-end="url(#arrow-gray)"/>
+
+  <!-- Left: H100 Prefill Pool -->
+  <rect x="40" y="110" width="420" height="170" rx="10" fill="#231440" stroke="#0F9ED5" stroke-width="2"/>
+  <rect x="40" y="110" width="420" height="30" rx="10" fill="#0F9ED5" opacity="0.3"/>
+  <rect x="40" y="120" width="420" height="20" fill="#0F9ED5" opacity="0.3"/>
+  <text x="250" y="130" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Prefill Pool — 高算力</text>
+
+  <!-- H100 GPUs -->
+  <rect x="65" y="155" width="85" height="100" rx="6" fill="#0E2841" stroke="#0F9ED5" stroke-width="1.5"/>
+  <text x="108" y="185" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H100</text>
+  <text x="108" y="200" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">989 TFLOPS</text>
+  <text x="108" y="215" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">3.35 TB/s</text>
+  <text x="108" y="230" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">适合 Prefill</text>
+  <text x="108" y="243" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">GEMM 密集</text>
+
+  <rect x="165" y="155" width="85" height="100" rx="6" fill="#0E2841" stroke="#0F9ED5" stroke-width="1.5"/>
+  <text x="208" y="185" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H100</text>
+  <text x="208" y="200" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">989 TFLOPS</text>
+  <text x="208" y="215" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">3.35 TB/s</text>
+  <text x="208" y="230" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">适合 Prefill</text>
+  <text x="208" y="243" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">GEMM 密集</text>
+
+  <rect x="265" y="155" width="85" height="100" rx="6" fill="#0E2841" stroke="#0F9ED5" stroke-width="1.5"/>
+  <text x="308" y="185" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H100</text>
+  <text x="308" y="215" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">...</text>
+
+  <rect x="365" y="155" width="85" height="100" rx="6" fill="#0E2841" stroke="#0F9ED5" stroke-width="1.5"/>
+  <text x="408" y="185" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H100</text>
+  <text x="408" y="215" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">...</text>
+
+  <!-- Prefill stats -->
+  <text x="340" y="160" text-anchor="middle" font-size="9" fill="#4ade80" font-weight="bold" font-family="sans-serif">×4</text>
+
+  <!-- Right: H200 Decode Pool -->
+  <rect x="540" y="110" width="420" height="170" rx="10" fill="#231440" stroke="#f97316" stroke-width="2"/>
+  <rect x="540" y="110" width="420" height="30" rx="10" fill="#f97316" opacity="0.3"/>
+  <rect x="540" y="120" width="420" height="20" fill="#f97316" opacity="0.3"/>
+  <text x="750" y="130" text-anchor="middle" font-size="12" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">Decode Pool — 高带宽</text>
+
+  <!-- H200 GPUs -->
+  <rect x="565" y="155" width="85" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="608" y="185" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="608" y="200" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">989 TFLOPS</text>
+  <text x="608" y="215" text-anchor="middle" font-size="8" fill="#fbbf24" font-family="sans-serif">4.8 TB/s ★</text>
+  <text x="608" y="230" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">适合 Decode</text>
+  <text x="608" y="243" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">GEMV 密集</text>
+
+  <rect x="665" y="155" width="85" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="708" y="185" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="708" y="200" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">989 TFLOPS</text>
+  <text x="708" y="215" text-anchor="middle" font-size="8" fill="#fbbf24" font-family="sans-serif">4.8 TB/s ★</text>
+  <text x="708" y="230" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif">适合 Decode</text>
+  <text x="708" y="243" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">GEMV 密集</text>
+
+  <rect x="765" y="155" width="85" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="808" y="185" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="808" y="215" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">...</text>
+
+  <rect x="865" y="155" width="85" height="100" rx="6" fill="#0E2841" stroke="#f97316" stroke-width="1.5"/>
+  <text x="908" y="185" text-anchor="middle" font-size="10" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">H200</text>
+  <text x="908" y="215" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">...</text>
+
+  <text x="840" y="160" text-anchor="middle" font-size="9" fill="#4ade80" font-weight="bold" font-family="sans-serif">×6</text>
+
+  <!-- Arrows from Gateway to pools -->
+  <defs>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#0F9ED5"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#f97316"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#4ade80"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto">
+      <polygon points="0 0, 6 2.5, 0 5" fill="#8A7BB5"/>
+    </marker>
+  </defs>
+
+  <!-- Gateway → Prefill Pool -->
+  <line x1="360" y1="78" x2="180" y2="140" stroke="#0F9ED5" stroke-width="2.5" marker-end="url(#arrow-blue)"/>
+  <text x="240" y="100" text-anchor="middle" font-size="8" fill="#0F9ED5" font-weight="bold" font-family="sans-serif">新对话 / Prefill</text>
+  <text x="240" y="112" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">(prompt 全部 token)</text>
+
+  <!-- Gateway → Decode Pool -->
+  <line x1="640" y1="78" x2="820" y2="140" stroke="#f97316" stroke-width="2.5" marker-end="url(#arrow-orange)"/>
+  <text x="780" y="100" text-anchor="middle" font-size="8" fill="#f97316" font-weight="bold" font-family="sans-serif">继续生成 / Decode</text>
+  <text x="780" y="112" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">(逐 token 追加)</text>
+
+  <!-- KV Cache transfer between pools — big green arrow -->
+  <line x1="460" y1="280" x2="540" y2="280" stroke="#4ade80" stroke-width="3" stroke-dasharray="8,4" marker-end="url(#arrow-green)"/>
+  <text x="500" y="270" text-anchor="middle" font-size="9" fill="#4ade80" font-weight="bold" font-family="sans-serif">KV Cache 传输 (NIXL / RDMA)</text>
+  <text x="500" y="295" text-anchor="middle" font-size="7" fill="#8A7BB5" font-family="sans-serif">节点内 NVLink &lt;1μs &nbsp;|&nbsp; 跨节点 RDMA ~10μs</text>
+
+  <!-- Bottom: explanation table -->
+  <rect x="100" y="340" width="800" height="160" rx="10" fill="#231440" stroke="#432879" stroke-width="1.5"/>
+
+  <!-- Table headers -->
+  <rect x="120" y="355" width="760" height="24" rx="4" fill="#0E2841"/>
+  <text x="220" y="371" text-anchor="middle" font-size="9" fill="#F8F6FB" font-weight="bold" font-family="sans-serif">维度</text>
+  <text x="410" y="371" text-anchor="middle" font-size="9" fill="#0F9ED5" font-weight="bold" font-family="sans-serif">Prefill (提示处理)</text>
+  <text x="660" y="371" text-anchor="middle" font-size="9" fill="#f97316" font-weight="bold" font-family="sans-serif">Decode (逐 token 生成)</text>
+
+  <text x="220" y="400" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">计算类型</text>
+  <text x="410" y="400" text-anchor="middle" font-size="8" fill="#F8F6FB" font-family="sans-serif">矩阵-矩阵乘法 (GEMM)</text>
+  <text x="660" y="400" text-anchor="middle" font-size="8" fill="#F8F6FB" font-family="sans-serif">矩阵-向量乘法 (GEMV)</text>
+
+  <text x="220" y="422" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">瓶颈</text>
+  <text x="410" y="422" text-anchor="middle" font-size="8" fill="#0F9ED5" font-weight="bold" font-family="sans-serif">Compute-bound — 需要高算力</text>
+  <text x="660" y="422" text-anchor="middle" font-size="8" fill="#f97316" font-weight="bold" font-family="sans-serif">Memory-bound — 需要高带宽</text>
+
+  <text x="220" y="444" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">最优 GPU</text>
+  <text x="410" y="444" text-anchor="middle" font-size="8" fill="#0F9ED5" font-family="sans-serif">H100 (989 TFLOPS, 3.35 TB/s)</text>
+  <text x="660" y="444" text-anchor="middle" font-size="8" fill="#f97316" font-family="sans-serif">H200 (989 TFLOPS, <tspan fill="#fbbf24">4.8 TB/s</tspan> ★)</text>
+
+  <text x="220" y="466" text-anchor="middle" font-size="8" fill="#8A7BB5" font-family="sans-serif">PD 分离收益</text>
+  <text x="410" y="466" text-anchor="middle" font-size="8" fill="#4ade80" font-family="sans-serif">独立扩缩: 早高峰扩 Prefill 池</text>
+  <text x="660" y="466" text-anchor="middle" font-size="8" fill="#4ade80" font-family="sans-serif">P99 TPOT -30~50% (不抢显存)</text>
+
+  <text x="500" y="492" text-anchor="middle" font-size="8" fill="#fbbf24" font-weight="bold" font-family="sans-serif">核心洞察: 同一个 GPU 型号不可能同时最优于两种负载 — PD 分离让硬件匹配负载特性</text>
+
+</svg>
+</div>
+</body>
+</html>
