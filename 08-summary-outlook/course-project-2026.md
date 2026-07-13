@@ -1,6 +1,6 @@
 # 课程大作业：编写一个 GPU 资源拦截器
 
-> [HTML 展示版](course-project-2026.html) (适合课堂投影)
+> [HTML 展示版](course-project-2026.html)
 
 ## 一、你要做什么
 
